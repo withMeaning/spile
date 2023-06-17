@@ -16,44 +16,45 @@ import sqlite3
 # + async sqlalchemy is ergh and I don't want to investigate async ORMs right now
 def create_tables():
     with sqlite3.connect("spile.db") as con:
-        with con.cursor() as cur:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    email TEXT PRIMARY KEY,
-                    auth_token TEXT,
-                    is_admin BOOL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                );
-                """
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                email TEXT PRIMARY KEY,
+                auth_token TEXT,
+                is_admin BOOL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+            """
+        )
 
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS items (
-                    uid TEXT PRIMARY KEY,
-                    type TEXT,
-                    content TEXT,
-                    resonance INTEGER,
-                    feedback TEXT,
-                    view_date TIMESTAMP,
-                    received_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (email) REFERENCES users(email)
-                );
-                """
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS items (
+                uid TEXT PRIMARY KEY,
+                type TEXT,
+                content TEXT,
+                resonance INTEGER,
+                feedback TEXT,
+                view_date TIMESTAMP,
+                received_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                email TEXT,
+                FOREIGN KEY (email) REFERENCES users(email)
+            );
+            """
+        )
+
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sources (
+                source TEXT,
+                type TEXT,
+                email TEXT,
+                FOREIGN KEY (email) REFERENCES users(email)
             )
+            """
+        )
 
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS sources (
-                    source TEXT,
-                    type TEXT,
-                    FOREIGN KEY (email) REFERENCES users(email)
-                )
-                """
-            )
-
-            con.commit()
+        con.commit()
 
 
 async def insert(table: str, values: list[dict]):
@@ -214,6 +215,11 @@ async def get_feed_rss(user_email: str):
     return "Not implemented"
 
 
+@app.get("/ping")
+async def ping():
+    return "Pong"
+
+
 @app.on_event("startup")
 async def startup():
     pass
@@ -222,10 +228,10 @@ async def startup():
 if __name__ == "__main__":
     create_tables()
     if len(sys.argv) > 1:
-        port = sys.argv[1]
+        port = int(sys.argv[1])
     else:
-        port = "8080"
+        port = 8080
     if os.environ.get("SPILE_ENV", "development") == "production":
-        uvicorn.run("api:app", port=port, host="0.0.0.0", workers=4)
+        uvicorn.run("main:app", port=port, host="0.0.0.0", workers=4)
     else:
-        uvicorn.run("api:app", port=port, host="0.0.0.0", workers=1)
+        uvicorn.run("main:app", port=port, host="0.0.0.0", reload=True)

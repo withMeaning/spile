@@ -8,14 +8,16 @@ import uvicorn
 from pydantic import BaseModel
 import aiohttp
 from typing import Annotated, Tuple
+import asyncio
+import sqlite3
 
 
 # Note orm will make it harder to split and modify, though make coding easier, so for now we aren't
 # + async sqlalchemy is ergh and I don't want to investigate async ORMs right now
-async def create_tables():
-    async with aiosqlite.connect("spile.db") as con:
-        async with con.cursor() as cur:
-            await cur.execute(
+def create_tables():
+    with sqlite3.connect("spile.db") as con:
+        with con.cursor() as cur:
+            cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS users (
                     email TEXT PRIMARY KEY,
@@ -26,7 +28,7 @@ async def create_tables():
                 """
             )
 
-            await cur.execute(
+            cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS items (
                     uid TEXT PRIMARY KEY,
@@ -41,7 +43,7 @@ async def create_tables():
                 """
             )
 
-            await cur.execute(
+            cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS sources (
                     source TEXT,
@@ -51,7 +53,7 @@ async def create_tables():
                 """
             )
 
-            await con.commit()
+            con.commit()
 
 
 async def insert(table: str, values: list[dict]):
@@ -218,14 +220,12 @@ async def startup():
 
 
 if __name__ == "__main__":
-    import asyncio
-
-    asyncio.run(create_tables())
+    create_tables()
     if len(sys.argv) > 1:
         port = sys.argv[1]
     else:
         port = "8080"
-    if os.environ.get("APP_ENV", "development") == "production":
+    if os.environ.get("SPILE_ENV", "development") == "production":
         uvicorn.run("api:app", port=port, host="0.0.0.0", workers=4)
     else:
         uvicorn.run("api:app", port=port, host="0.0.0.0", workers=1)

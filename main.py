@@ -7,7 +7,7 @@ import os
 import uvicorn
 from pydantic import BaseModel
 import aiohttp
-from typing import Annotated
+from typing import Annotated, Tuple
 
 
 # Note orm will make it harder to split and modify, though make coding easier, so for now we aren't
@@ -137,7 +137,7 @@ async def consume_source(source: str, source_type: str, email: str):
 
 # token: :
 async def create_user(
-    email: str, is_admin: bool, auth_data: Annotated[(str, str), Depends(auth)]
+    email: str, is_admin: bool, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
     if auth_data[1]:
         new_user_auth_token = generate_auth_token()
@@ -154,7 +154,7 @@ async def rate_item(
     uid: str,
     feedback: str,
     resonance: int,
-    auth_data: Annotated[(str, str), Depends(auth)],
+    auth_data: Annotated[tuple[str], Depends(auth)],
 ):
     async with aiosqlite.connect("spile.db") as db:
         await db.execute(
@@ -163,7 +163,7 @@ async def rate_item(
 
 
 @app.get("/get_items")
-async def get_items(auth_data: Annotated[(str, str), Depends(auth)]):
+async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
     async with aiosqlite.connect("spile.db") as db:
         all_consumeable = await db.execute(
             f"SELECT * FROM items WHERE email='{auth_data[0]}'"
@@ -172,7 +172,7 @@ async def get_items(auth_data: Annotated[(str, str), Depends(auth)]):
 
 
 @app.post("/add_source")
-async def add_source(source: str, auth_data: Annotated[(str, str), Depends(auth)]):
+async def add_source(source: str, auth_data: Annotated[tuple[str], Depends(auth)]):
     source_type = await detect_source_type(source)
     async with aiosqlite.connect("spile.db") as db:
         await db.execute(

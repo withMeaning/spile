@@ -1,6 +1,7 @@
 import requests
 import sqlite3
 import json
+import os
 
 
 # A server runs on 8080 using spile.db with and admin account
@@ -9,7 +10,7 @@ base = "http://localhost:8080"
 
 # We make the admin account
 db = sqlite3.connect("spile.db")
-db.execute("INSERT INTO users VALUES ('test@test.com', 'abcdefg', true)")
+db.execute("INSERT INTO users (email, auth_token, is_admin) VALUES ('test@test.com', 'abcdefg', true)")
 db.commit()
 
 ## And create two users
@@ -18,12 +19,12 @@ user2_email = "user2@test.com"
 user1_auth = requests.post(
     base + "/create_user",
     headers={"auth_token": "abcdefg"},
-    data={"email": user1_email},
+    json={"email": user1_email, "is_admin": False},
 ).json()["auth_token"]
 user2_auth = requests.post(
     base + "/create_user",
     headers={"auth_token": "abcdefg"},
-    data={"email": user2_email},
+    json={"email": user2_email, "is_admin": True},
 ).json()["auth_token"]
 
 # Both users should have no items
@@ -57,7 +58,7 @@ for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
         base + "/get_items", headers={"auth_token": auth_token}
     ).json()["items"]
-    assert len(items) == 0
+    assert len(items) == 1
 
 
 # Now subscribe them to each other

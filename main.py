@@ -10,6 +10,7 @@ import aiohttp
 from typing import Annotated, Tuple
 import asyncio
 import sqlite3
+from uuid import uuid4
 
 
 # Note orm will make it harder to split and modify, though make coding easier, so for now we aren't
@@ -84,7 +85,7 @@ async def select(q: str, one: bool = False):
                 if len(rows) < 1:
                     return None
                 return res[0]
-            return res
+            return [x for x in res]
 
 
 async def auth(req: Request):
@@ -138,18 +139,26 @@ async def consume_source(source: str, source_type: str, email: str):
         raise ValueError(f"Unknown source type: `{source_type}` for source `{source}`!")
 
 
-# token: :
+def generate_auth_token():
+    return str(uuid4())
+
+
+class CreateUserBody(BaseModel):
+    email: str
+    is_admin: bool
+
+@app.post("/create_user")
 async def create_user(
-    email: str, is_admin: bool, auth_data: Annotated[tuple[str], Depends(auth)]
+    body: CreateUserBody, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
     if auth_data[1]:
         new_user_auth_token = generate_auth_token()
         async with aiosqlite.connect("spile.db") as db:
             await db.execute(
-                f"INSERT INTO users VALUES ('{email}', '{new_user_auth_token}', {str(is_admin).lower()})"
+                f"INSERT INTO users (email, auth_token, is_admin) VALUES ('{body.email}', '{new_user_auth_token}', {str(body.is_admin).lower()})"
             )
             await db.commit()
-    return {"email": email, "auth_token": new_user_auth_token}
+    return {"email": body.email, "auth_token": new_user_auth_token}
 
 
 @app.post("/rate_item")
@@ -168,9 +177,9 @@ async def rate_item(
 @app.get("/get_items")
 async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
     async with aiosqlite.connect("spile.db") as db:
-        all_consumeable = await db.execute(
-            f"SELECT * FROM items WHERE email='{auth_data[0]}'"
-        )
+        all_consumeable = await select(
+            f"SELECT * FROM items WHERE email='{auth_data[0]}'")
+        print(all_consumeable)
     return {"updateAt": datetime.datetime.now(), "items": all_consumeable}
 
 

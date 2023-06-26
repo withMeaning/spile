@@ -138,7 +138,6 @@ async def consume_source(source: str, source_type: str, email: str):
     else:
         raise ValueError(f"Unknown source type: `{source_type}` for source `{source}`!")
 
-
 def generate_auth_token():
     return str(uuid4())
 
@@ -182,25 +181,34 @@ async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
         print(all_consumeable)
     return {"updateAt": datetime.datetime.now(), "items": all_consumeable}
 
+class CreateItemBody(BaseModel):
+    title: str
+    content: str
+    link: str
+    email: str
+    type: str
+
 @app.post("/add_item")
 async def add_item(
-        content: str,
-        email: str,
-        type: str,
+        body: CreateItemBody
         #auth_data: Annotated[tuple[str], Depends(auth)]
     ):
-    await insert(
-                "items",
-                    [
-                        {
-                            "item_content": content,
-                            "item_type": type,
-                            "uid": generate_auth_token(),
-                            "email": email,
-                        }
-                    ],
-                )
-
+    with sqlite3.connect("spile.db") as db:
+        db.execute(
+            f""" INSERT INTO items (uid, content, email) VALUES (?, ?, ?)""",
+            (
+                generate_auth_token(),
+                json.dumps(
+                    {
+                        "title": body.title,
+                        "content": body.content,
+                        "link": body.link,
+                    }
+                ),
+                body.email,
+            ),
+        )
+    return body
 
 @app.post("/add_source")
 async def add_source(source: str, auth_data: Annotated[tuple[str], Depends(auth)]):

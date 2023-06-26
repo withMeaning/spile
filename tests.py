@@ -10,6 +10,60 @@ base = "http://localhost:8080"
 
 # We make the admin account
 db = sqlite3.connect("spile.db")
+
+#resets the DB for now
+cur = db.cursor()
+cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
+tables = cur.fetchall()
+for table in tables:
+    table_name = table[0]
+    drop_query = f"DROP TABLE {table_name};"
+    cur.execute(drop_query)
+db.commit()
+
+with sqlite3.connect("spile.db") as con:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                email TEXT PRIMARY KEY,
+                auth_token TEXT,
+                is_admin BOOL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS items (
+                uid TEXT PRIMARY KEY,
+                type TEXT,
+                content TEXT,
+                resonance INTEGER,
+                feedback TEXT,
+                view_date TIMESTAMP,
+                received_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                email TEXT,
+                FOREIGN KEY (email) REFERENCES users(email)
+            );
+            """
+        )
+
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sources (
+                source TEXT,
+                type TEXT,
+                email TEXT,
+                FOREIGN KEY (email) REFERENCES users(email)
+            )
+            """
+        )
+
+        con.commit()
+
+
+
 db.execute("INSERT INTO users (email, auth_token, is_admin) VALUES ('test@test.com', 'abcdefg', true)")
 db.commit()
 
@@ -37,21 +91,9 @@ for auth_token in [user1_auth, user2_auth]:
 
 # Artificially add items
 for email in [user1_email, user2_email]:
-    with sqlite3.connect("spile.db") as db:
-        db.execute(
-            f""" INSERT INTO items (uid, content, email) VALUES (?, ?, ?)""",
-            (
-                f"uid_for_{email}_content",
-                json.dumps(
-                    {
-                        "title": "A",
-                        "content": "blah blah",
-                        "link": "http://baz.com/rara.txt",
-                    }
-                ),
-                email,
-            ),
-        )
+    res = requests.post(base + "/add_item", 
+                        headers={"auth_token": "abcdefg"},
+                        json={"title": "Hello", "content": "Blob", "link": "Link.de", "email": email, "type": "read"})
 
 # Now both users should get 1 item
 for auth_token in [user1_auth, user2_auth]:

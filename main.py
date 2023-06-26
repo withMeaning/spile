@@ -149,15 +149,15 @@ class CreateUserBody(BaseModel):
 
 @app.post("/create_user")
 async def create_user(
-    body: CreateUserBody, auth_data: Annotated[tuple[str], Depends(auth)]
+    body: CreateUserBody #, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
-    if auth_data[1]:
-        new_user_auth_token = generate_auth_token()
-        async with aiosqlite.connect("spile.db") as db:
-            await db.execute(
-                f"INSERT INTO users (email, auth_token, is_admin) VALUES ('{body.email}', '{new_user_auth_token}', {str(body.is_admin).lower()})"
-            )
-            await db.commit()
+    #if auth_data[1]:
+    new_user_auth_token = generate_auth_token()
+    async with aiosqlite.connect("spile.db") as db:
+        await db.execute(
+            f"INSERT INTO users (email, auth_token, is_admin) VALUES ('{body.email}', '{new_user_auth_token}', {str(body.is_admin).lower()})"
+        )
+        await db.commit()
     return {"email": body.email, "auth_token": new_user_auth_token}
 
 
@@ -181,6 +181,25 @@ async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
             f"SELECT * FROM items WHERE email='{auth_data[0]}'")
         print(all_consumeable)
     return {"updateAt": datetime.datetime.now(), "items": all_consumeable}
+
+@app.post("/add_item")
+async def add_item(
+        content: str,
+        email: str,
+        type: str,
+        #auth_data: Annotated[tuple[str], Depends(auth)]
+    ):
+    await insert(
+                "items",
+                    [
+                        {
+                            "item_content": content,
+                            "item_type": type,
+                            "uid": generate_auth_token(),
+                            "email": email,
+                        }
+                    ],
+                )
 
 
 @app.post("/add_source")

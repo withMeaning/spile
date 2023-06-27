@@ -11,6 +11,7 @@ from typing import Annotated, Tuple
 import asyncio
 import sqlite3
 from uuid import uuid4
+from fastapi.middleware.cors import CORSMiddleware
 
 
 # Note orm will make it harder to split and modify, though make coding easier, so for now we aren't
@@ -31,19 +32,21 @@ def create_tables():
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS items (
-                uid TEXT PRIMARY KEY,
-                type TEXT,
+                id TEXT PRIMARY KEY,
+                identifier TEXT,
+                title TEXT,
+                author TEXT,
                 content TEXT,
-                resonance INTEGER,
-                feedback TEXT,
-                view_date TIMESTAMP,
-                received_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                summary TEXT,
+                link TEXT,
+                type TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 email TEXT,
                 FOREIGN KEY (email) REFERENCES users(email)
             );
             """
         )
-
+        # resonance INTEGER, feedback TEXT, view_date TIMESTAMP, received_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS sources (
@@ -102,6 +105,13 @@ async def auth(req: Request):
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 async def detect_source_type(source: str):
     if "@" in source and "get_feed" in source:

@@ -64,12 +64,15 @@ async def insert(table: str, values: list[dict]):
             question_marks = ",".join(["?"] * len(values[0]))
             ordered_keys = list(values[0].keys())
             cols = ",".join(ordered_keys)
-            fmt_values = [
-                [values[i][k] for k in ordered_keys] for i in range(len(values))
-            ]
+            fmt_values = tuple(
+                tuple(values[i][k] for k in ordered_keys) for i in range(len(values))
+            )
+            if len(fmt_values) == 1:
+                fmt_values = fmt_values[0]
             q = f"INSERT INTO {table} ({cols}) VALUES ({question_marks})"
-            cur.execute(q, fmt_values)
-            con.commit()
+            print(q, fmt_values)
+            await cur.execute(q, fmt_values)
+            await con.commit()
 
 
 async def select(q: str, one: bool = False):
@@ -152,11 +155,11 @@ async def create_user(
 ):
     #if auth_data[1]:
     new_user_auth_token = generate_auth_token()
-    async with aiosqlite.connect("spile.db") as db:
-        await db.execute(
-            f"INSERT INTO users (email, auth_token, is_admin) VALUES ('{body.email}', '{new_user_auth_token}', {str(body.is_admin).lower()})"
-        )
-        await db.commit()
+    await insert("users", [{
+        "email": body.email,
+        "auth_token": new_user_auth_token,
+        "is_admin": str(body.is_admin).lower(),
+    }])
     return {"email": body.email, "auth_token": new_user_auth_token}
 
 
@@ -193,56 +196,49 @@ async def add_item(
         body: CreateItemBody
         #auth_data: Annotated[tuple[str], Depends(auth)]
     ):
-    with sqlite3.connect("spile.db") as db:
-        db.execute(
-            f""" INSERT INTO items (uid, content, email) VALUES (?, ?, ?)""",
-            (
-                generate_auth_token(),
-                json.dumps(
+    await insert("items", [{
+        "uid": generate_auth_token(),
+        "content": json.dumps(
                     {
                         "title": body.title,
                         "content": body.content,
                         "link": body.link,
                     }
                 ),
-                body.email,
-            ),
-        )
+        "email": body.email,
+    }])
     return body
 
 @app.post("/add_source")
 async def add_source(source: str, auth_data: Annotated[tuple[str], Depends(auth)]):
     source_type = await detect_source_type(source)
-    async with aiosqlite.connect("spile.db") as db:
-        await db.execute(
-            f"INSERT INTO sources VALUES ('{source}', '{source_type}', '{auth_data[0]}')"
-        )
-        await db.commit()
+    await insert("sources", [{
+        "source": source,
+        "type": source_type,
+        "email": auth_data[0]
+    }])
 
 
 @app.get("/get_feed/{user_email}")
-async def get_feed():
-    async with aiosqlite.connect("spile.db") as db:
-        all_consumeable = await db.execute(
-            f"SELECT uid, content, type, resonance, feedback FROM items WHERE email='{user_email}' AND view_date is not null"
+async def get_feed(user_email: str):
+    all_consumeable = await select("SELECT uid, content, type, resonance, feedback FROM items WHERE email='{user_email}' AND view_date is not null")
+    consumable_objs = []
+    for val in all_consumeable:
+        consumable_obj = json.loads(val[1])
+        consumable_obj.views.append(
+            {
+                "viewer": user_email,
+                "resonance": val["resonance"],
+                "feedback": val["feedback"],
+            }
         )
-        consumable_objs = {"updateAt": datetime.datetime.now(), "items": []}
-        for val in all_consumeable:
-            consumable_obj = json.loads(val[1])
-            consumable_obj.views.append(
-                {
-                    "viewer": user_email,
-                    "resonance": val[3],
-                    "feedback": val[4],
-                }
-            )
-            consumable_objs.append(
-                {
-                    "uid": val[0],
-                    "type": val[2],
-                    "content": consumable_obj,
-                }
-            )
+        consumable_objs.append(
+            {
+                "uid": val["uid"],
+                "type": val["type"],
+                "content": consumable_obj,
+            }
+        )
     return all_consumeable
 
 

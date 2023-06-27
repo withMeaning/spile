@@ -11,6 +11,10 @@ from typing import Annotated, Tuple
 import asyncio
 import sqlite3
 from uuid import uuid4
+import threading
+import time
+import requests
+from hashlib import md5
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -42,7 +46,8 @@ def create_tables():
                 type TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 email TEXT,
-                FOREIGN KEY (email) REFERENCES users(email)
+                FOREIGN KEY (email) REFERENCES users(email),
+                UNIQUE(uid, email)
             );
             """
         )
@@ -67,12 +72,15 @@ async def insert(table: str, values: list[dict]):
             question_marks = ",".join(["?"] * len(values[0]))
             ordered_keys = list(values[0].keys())
             cols = ",".join(ordered_keys)
-            fmt_values = [
-                [values[i][k] for k in ordered_keys] for i in range(len(values))
-            ]
+            fmt_values = tuple(
+                tuple(values[i][k] for k in ordered_keys) for i in range(len(values))
+            )
+            if len(fmt_values) == 1:
+                fmt_values = fmt_values[0]
             q = f"INSERT INTO {table} ({cols}) VALUES ({question_marks})"
-            cur.execute(q, fmt_values)
-            con.commit()
+            print(q, fmt_values)
+            await cur.execute(q, fmt_values)
+            await con.commit()
 
 
 async def select(q: str, one: bool = False):
@@ -144,30 +152,41 @@ async def consume_source(source: str, source_type: str, email: str):
                     ],
                 )
     elif source_type == "rss":
-        pass
+        print("RSS not implemented yet!")
     else:
         raise ValueError(f"Unknown source type: `{source_type}` for source `{source}`!")
 
+
 def generate_auth_token():
     return str(uuid4())
+
+def generate_content_uid(content: str):
+    return str(md5(content.encode("utf-8")).hexdigest())
 
 
 class CreateUserBody(BaseModel):
     email: str
     is_admin: bool
 
+
 @app.post("/create_user")
 async def create_user(
-    body: CreateUserBody #, auth_data: Annotated[tuple[str], Depends(auth)]
+    body: CreateUserBody,  
+    auth_data: Annotated[tuple[str], Depends(auth)]
 ):
-    #if auth_data[1]:
-    new_user_auth_token = generate_auth_token()
-    async with aiosqlite.connect("spile.db") as db:
-        await db.execute(
-            f"INSERT INTO users (email, auth_token, is_admin) VALUES ('{body.email}', '{new_user_auth_token}', {str(body.is_admin).lower()})"
+    if auth_data[1]:
+        new_user_auth_token = generate_auth_token()
+        await insert(
+            "users",
+            [
+                {
+                    "email": body.email,
+                    "auth_token": new_user_auth_token,
+                    "is_admin": str(body.is_admin).lower(),
+                }
+            ],
         )
-        await db.commit()
-    return {"email": body.email, "auth_token": new_user_auth_token}
+        return {"email": body.email, "auth_token": new_user_auth_token}
 
 
 @app.post("/rate_item")
@@ -187,9 +206,11 @@ async def rate_item(
 async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
     async with aiosqlite.connect("spile.db") as db:
         all_consumeable = await select(
-            f"SELECT * FROM items WHERE email='{auth_data[0]}'")
+            f"SELECT * FROM items WHERE email='{auth_data[0]}'"
+        )
         print(all_consumeable)
     return {"updateAt": datetime.datetime.now(), "items": all_consumeable}
+
 
 class CreateItemBody(BaseModel):
     title: str
@@ -198,61 +219,65 @@ class CreateItemBody(BaseModel):
     email: str
     type: str
 
+
 @app.post("/add_item")
 async def add_item(
-        body: CreateItemBody
-        #auth_data: Annotated[tuple[str], Depends(auth)]
-    ):
-    with sqlite3.connect("spile.db") as db:
-        db.execute(
-            f""" INSERT INTO items (uid, content, email) VALUES (?, ?, ?)""",
-            (
-                generate_auth_token(),
-                json.dumps(
+    body: CreateItemBody,
+    auth_data: Annotated[tuple[str], Depends(auth)]
+):
+    await insert(
+        "items",
+        [
+            {
+                "uid": generate_content_uid(body.content),
+                "content": json.dumps(
                     {
                         "title": body.title,
                         "content": body.content,
                         "link": body.link,
                     }
                 ),
-                body.email,
-            ),
-        )
+                "email": auth_data[0],
+            }
+        ],
+    )
     return body
 
+
+class AddSourceBody(BaseModel):
+    source: str
+
 @app.post("/add_source")
-async def add_source(source: str, auth_data: Annotated[tuple[str], Depends(auth)]):
-    source_type = await detect_source_type(source)
-    async with aiosqlite.connect("spile.db") as db:
-        await db.execute(
-            f"INSERT INTO sources VALUES ('{source}', '{source_type}', '{auth_data[0]}')"
-        )
-        await db.commit()
+async def add_source(data: AddSourceBody, auth_data: Annotated[tuple[str], Depends(auth)]):
+    source_type = await detect_source_type(data.source)
+    await insert(
+        "sources", [{"source": data.source, "type": source_type, "email": auth_data[0]}]
+    )
+    return {"status": "ok"}
 
 
 @app.get("/get_feed/{user_email}")
-async def get_feed():
-    async with aiosqlite.connect("spile.db") as db:
-        all_consumeable = await db.execute(
-            f"SELECT uid, content, type, resonance, feedback FROM items WHERE email='{user_email}' AND view_date is not null"
+async def get_feed(user_email: str):
+    all_consumeable = await select(
+        "SELECT uid, content, type, resonance, feedback FROM items WHERE email='{user_email}' AND view_date is not null"
+    )
+    consumable_objs = []
+    for val in all_consumeable:
+        consumable_obj = json.loads(val[1])
+        consumable_obj.views.append(
+            {
+                "viewer": user_email,
+                "resonance": val["resonance"],
+                "feedback": val["feedback"],
+            }
         )
-        consumable_objs = {"updateAt": datetime.datetime.now(), "items": []}
-        for val in all_consumeable:
-            consumable_obj = json.loads(val[1])
-            consumable_obj.views.append(
-                {
-                    "viewer": user_email,
-                    "resonance": val[3],
-                    "feedback": val[4],
-                }
-            )
-            consumable_objs.append(
-                {
-                    "uid": val[0],
-                    "type": val[2],
-                    "content": consumable_obj,
-                }
-            )
+        consumable_objs.append(
+            {
+                "uid": val["uid"],
+                "type": val["type"],
+                "content": consumable_obj,
+            }
+        )
     return all_consumeable
 
 
@@ -271,8 +296,29 @@ async def startup():
     pass
 
 
+async def refresh_data():
+    while True:
+        sources = await select("SELECT * FROM sources")
+        for source in sources:
+            await consume_source(source["source"], source["type"], source["email"])
+        time.sleep(0.33)
+
+
+class BackgroundTasks(threading.Thread):
+    def run(self,*args,**kwargs):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        loop.run_until_complete(refresh_data())
+        loop.close()
+
+  
+
+
 if __name__ == "__main__":
     create_tables()
+    t = BackgroundTasks()
+    t.start()
     if len(sys.argv) > 1:
         port = int(sys.argv[1])
     else:

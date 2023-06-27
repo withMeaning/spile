@@ -11,7 +11,7 @@ base = "http://localhost:8080"
 # We make the admin account
 db = sqlite3.connect("spile.db")
 
-#resets the DB for now
+# resets the DB for now
 cur = db.cursor()
 cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
 tables = cur.fetchall()
@@ -22,8 +22,8 @@ for table in tables:
 db.commit()
 
 with sqlite3.connect("spile.db") as con:
-        con.execute(
-            """
+    con.execute(
+        """
             CREATE TABLE IF NOT EXISTS users (
                 email TEXT PRIMARY KEY,
                 auth_token TEXT,
@@ -31,10 +31,10 @@ with sqlite3.connect("spile.db") as con:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """
-        )
+    )
 
-        con.execute(
-            """
+    con.execute(
+        """
             CREATE TABLE IF NOT EXISTS items (
                 uid TEXT PRIMARY KEY,
                 type TEXT,
@@ -47,10 +47,10 @@ with sqlite3.connect("spile.db") as con:
                 FOREIGN KEY (email) REFERENCES users(email)
             );
             """
-        )
+    )
 
-        con.execute(
-            """
+    con.execute(
+        """
             CREATE TABLE IF NOT EXISTS sources (
                 source TEXT,
                 type TEXT,
@@ -58,13 +58,14 @@ with sqlite3.connect("spile.db") as con:
                 FOREIGN KEY (email) REFERENCES users(email)
             )
             """
-        )
+    )
 
-        con.commit()
+    con.commit()
 
 
-
-db.execute("INSERT INTO users (email, auth_token, is_admin) VALUES ('test@test.com', 'abcdefg', true)")
+db.execute(
+    "INSERT INTO users (email, auth_token, is_admin) VALUES ('test@test.com', 'abcdefg', true)"
+)
 db.commit()
 
 ## And create two users
@@ -91,9 +92,17 @@ for auth_token in [user1_auth, user2_auth]:
 
 # Artificially add items
 for email in [user1_email, user2_email]:
-    res = requests.post(base + "/add_item", 
-                        headers={"auth_token": "abcdefg"},
-                        json={"title": "Hello", "content": "Blob", "link": "Link.de", "email": email, "type": "read"})
+    res = requests.post(
+        base + "/add_item",
+        headers={"auth_token": "abcdefg"},
+        json={
+            "title": "Hello",
+            "content": "Blob",
+            "link": "Link.de",
+            "email": email,
+            "type": "read",
+        },
+    )
 
 # Now both users should get 1 item
 for auth_token in [user1_auth, user2_auth]:
@@ -104,6 +113,16 @@ for auth_token in [user1_auth, user2_auth]:
 
 
 # Now subscribe them to each other
+requests.get(
+    base + "/add_source",
+    headers={"auth_token": user1_auth},
+    json={"source": base + "/get_feed/{user2_email}"},
+)
+requests.get(
+    base + "/add_source",
+    headers={"auth_token": user2_auth},
+    json={"source": base + "/get_feed/{user1_email}"},
+)
 
 
 # They should still have 1 item each

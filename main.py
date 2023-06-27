@@ -141,6 +141,7 @@ async def consume_source(source: str, source_type: str, email: str):
     else:
         raise ValueError(f"Unknown source type: `{source_type}` for source `{source}`!")
 
+
 def generate_auth_token():
     return str(uuid4())
 
@@ -149,17 +150,23 @@ class CreateUserBody(BaseModel):
     email: str
     is_admin: bool
 
+
 @app.post("/create_user")
 async def create_user(
-    body: CreateUserBody #, auth_data: Annotated[tuple[str], Depends(auth)]
+    body: CreateUserBody,  # , auth_data: Annotated[tuple[str], Depends(auth)]
 ):
-    #if auth_data[1]:
+    # if auth_data[1]:
     new_user_auth_token = generate_auth_token()
-    await insert("users", [{
-        "email": body.email,
-        "auth_token": new_user_auth_token,
-        "is_admin": str(body.is_admin).lower(),
-    }])
+    await insert(
+        "users",
+        [
+            {
+                "email": body.email,
+                "auth_token": new_user_auth_token,
+                "is_admin": str(body.is_admin).lower(),
+            }
+        ],
+    )
     return {"email": body.email, "auth_token": new_user_auth_token}
 
 
@@ -180,9 +187,11 @@ async def rate_item(
 async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
     async with aiosqlite.connect("spile.db") as db:
         all_consumeable = await select(
-            f"SELECT * FROM items WHERE email='{auth_data[0]}'")
+            f"SELECT * FROM items WHERE email='{auth_data[0]}'"
+        )
         print(all_consumeable)
     return {"updateAt": datetime.datetime.now(), "items": all_consumeable}
+
 
 class CreateItemBody(BaseModel):
     title: str
@@ -191,37 +200,44 @@ class CreateItemBody(BaseModel):
     email: str
     type: str
 
+
 @app.post("/add_item")
 async def add_item(
-        body: CreateItemBody
-        #auth_data: Annotated[tuple[str], Depends(auth)]
-    ):
-    await insert("items", [{
-        "uid": generate_auth_token(),
-        "content": json.dumps(
+    body: CreateItemBody,
+    # auth_data: Annotated[tuple[str], Depends(auth)]
+):
+    await insert(
+        "items",
+        [
+            {
+                "uid": generate_auth_token(),
+                "content": json.dumps(
                     {
                         "title": body.title,
                         "content": body.content,
                         "link": body.link,
                     }
                 ),
-        "email": body.email,
-    }])
+                "email": body.email,
+            }
+        ],
+    )
     return body
+
 
 @app.post("/add_source")
 async def add_source(source: str, auth_data: Annotated[tuple[str], Depends(auth)]):
     source_type = await detect_source_type(source)
-    await insert("sources", [{
-        "source": source,
-        "type": source_type,
-        "email": auth_data[0]
-    }])
+    await insert(
+        "sources", [{"source": source, "type": source_type, "email": auth_data[0]}]
+    )
 
 
 @app.get("/get_feed/{user_email}")
 async def get_feed(user_email: str):
-    all_consumeable = await select("SELECT uid, content, type, resonance, feedback FROM items WHERE email='{user_email}' AND view_date is not null")
+    all_consumeable = await select(
+        "SELECT uid, content, type, resonance, feedback FROM items WHERE email='{user_email}' AND view_date is not null"
+    )
     consumable_objs = []
     for val in all_consumeable:
         consumable_obj = json.loads(val[1])

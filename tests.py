@@ -11,58 +11,6 @@ base = "http://localhost:8080"
 # We make the admin account
 db = sqlite3.connect("spile.db")
 
-# resets the DB for now
-cur = db.cursor()
-cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
-tables = cur.fetchall()
-for table in tables:
-    table_name = table[0]
-    drop_query = f"DROP TABLE {table_name};"
-    cur.execute(drop_query)
-db.commit()
-
-with sqlite3.connect("spile.db") as con:
-    con.execute(
-        """
-            CREATE TABLE IF NOT EXISTS users (
-                email TEXT PRIMARY KEY,
-                auth_token TEXT,
-                is_admin BOOL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-    )
-
-    con.execute(
-        """
-            CREATE TABLE IF NOT EXISTS items (
-                uid TEXT PRIMARY KEY,
-                type TEXT,
-                content TEXT,
-                resonance INTEGER,
-                feedback TEXT,
-                view_date TIMESTAMP,
-                received_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                email TEXT,
-                FOREIGN KEY (email) REFERENCES users(email)
-            );
-            """
-    )
-
-    con.execute(
-        """
-            CREATE TABLE IF NOT EXISTS sources (
-                source TEXT,
-                type TEXT,
-                email TEXT,
-                FOREIGN KEY (email) REFERENCES users(email)
-            )
-            """
-    )
-
-    con.commit()
-
-
 db.execute(
     "INSERT INTO users (email, auth_token, is_admin) VALUES ('test@test.com', 'abcdefg', true)"
 )
@@ -91,10 +39,10 @@ for auth_token in [user1_auth, user2_auth]:
 
 
 # Artificially add items
-for email in [user1_email, user2_email]:
+for auth, email in [(user1_auth, user1_email), (user2_auth, user2_email)]:
     res = requests.post(
         base + "/add_item",
-        headers={"auth_token": "abcdefg"},
+        headers={"auth_token": auth},
         json={
             "title": "Hello",
             "content": "Blob",
@@ -109,20 +57,23 @@ for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
         base + "/get_items", headers={"auth_token": auth_token}
     ).json()["items"]
+    print(len(items))
     assert len(items) == 1
 
 
 # Now subscribe them to each other
-requests.get(
+resp = requests.post(
     base + "/add_source",
     headers={"auth_token": user1_auth},
     json={"source": base + "/get_feed/{user2_email}"},
 )
-requests.get(
+assert resp.status_code == 200
+resp = requests.post(
     base + "/add_source",
     headers={"auth_token": user2_auth},
     json={"source": base + "/get_feed/{user1_email}"},
 )
+assert resp.status_code == 200
 
 
 # They should still have 1 item each

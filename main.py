@@ -11,6 +11,10 @@ from typing import Annotated, Tuple
 import asyncio
 import sqlite3
 from uuid import uuid4
+import threading
+import time
+import requests
+from hashlib import md5
 
 
 # Note orm will make it harder to split and modify, though make coding easier, so for now we aren't
@@ -31,7 +35,7 @@ def create_tables():
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS items (
-                uid TEXT PRIMARY KEY,
+                uid TEXT,
                 type TEXT,
                 content TEXT,
                 resonance INTEGER,
@@ -39,7 +43,8 @@ def create_tables():
                 view_date TIMESTAMP,
                 received_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 email TEXT,
-                FOREIGN KEY (email) REFERENCES users(email)
+                FOREIGN KEY (email) REFERENCES users(email),
+                UNIQUE(uid, email)
             );
             """
         )
@@ -137,13 +142,16 @@ async def consume_source(source: str, source_type: str, email: str):
                     ],
                 )
     elif source_type == "rss":
-        pass
+        print("RSS not implemented yet!")
     else:
         raise ValueError(f"Unknown source type: `{source_type}` for source `{source}`!")
 
 
 def generate_auth_token():
     return str(uuid4())
+
+def generate_content_uid(content: str):
+    return str(md5(content.encode("utf-8")).hexdigest())
 
 
 class CreateUserBody(BaseModel):
@@ -153,21 +161,22 @@ class CreateUserBody(BaseModel):
 
 @app.post("/create_user")
 async def create_user(
-    body: CreateUserBody,  # , auth_data: Annotated[tuple[str], Depends(auth)]
+    body: CreateUserBody,  
+    auth_data: Annotated[tuple[str], Depends(auth)]
 ):
-    # if auth_data[1]:
-    new_user_auth_token = generate_auth_token()
-    await insert(
-        "users",
-        [
-            {
-                "email": body.email,
-                "auth_token": new_user_auth_token,
-                "is_admin": str(body.is_admin).lower(),
-            }
-        ],
-    )
-    return {"email": body.email, "auth_token": new_user_auth_token}
+    if auth_data[1]:
+        new_user_auth_token = generate_auth_token()
+        await insert(
+            "users",
+            [
+                {
+                    "email": body.email,
+                    "auth_token": new_user_auth_token,
+                    "is_admin": str(body.is_admin).lower(),
+                }
+            ],
+        )
+        return {"email": body.email, "auth_token": new_user_auth_token}
 
 
 @app.post("/rate_item")
@@ -204,13 +213,13 @@ class CreateItemBody(BaseModel):
 @app.post("/add_item")
 async def add_item(
     body: CreateItemBody,
-    # auth_data: Annotated[tuple[str], Depends(auth)]
+    auth_data: Annotated[tuple[str], Depends(auth)]
 ):
     await insert(
         "items",
         [
             {
-                "uid": generate_auth_token(),
+                "uid": generate_content_uid(body.content),
                 "content": json.dumps(
                     {
                         "title": body.title,
@@ -218,19 +227,23 @@ async def add_item(
                         "link": body.link,
                     }
                 ),
-                "email": body.email,
+                "email": auth_data[0],
             }
         ],
     )
     return body
 
 
+class AddSourceBody(BaseModel):
+    source: str
+
 @app.post("/add_source")
-async def add_source(source: str, auth_data: Annotated[tuple[str], Depends(auth)]):
-    source_type = await detect_source_type(source)
+async def add_source(data: AddSourceBody, auth_data: Annotated[tuple[str], Depends(auth)]):
+    source_type = await detect_source_type(data.source)
     await insert(
-        "sources", [{"source": source, "type": source_type, "email": auth_data[0]}]
+        "sources", [{"source": data.source, "type": source_type, "email": auth_data[0]}]
     )
+    return {"status": "ok"}
 
 
 @app.get("/get_feed/{user_email}")
@@ -273,8 +286,29 @@ async def startup():
     pass
 
 
+async def refresh_data():
+    while True:
+        sources = await select("SELECT * FROM sources")
+        for source in sources:
+            await consume_source(source["source"], source["type"], source["email"])
+        time.sleep(0.33)
+
+
+class BackgroundTasks(threading.Thread):
+    def run(self,*args,**kwargs):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        loop.run_until_complete(refresh_data())
+        loop.close()
+
+  
+
+
 if __name__ == "__main__":
     create_tables()
+    t = BackgroundTasks()
+    t.start()
     if len(sys.argv) > 1:
         port = int(sys.argv[1])
     else:

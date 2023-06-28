@@ -65,19 +65,24 @@ for auth_token in [user1_auth, user2_auth]:
 resp = requests.post(
     base + "/add_source",
     headers={"auth_token": user1_auth},
-    json={"source": base + "/get_feed/{user2_email}"},
+    json={"source": base + f"/get_feed/{user2_email}"},
 )
 assert resp.status_code == 200
 resp = requests.post(
     base + "/add_source",
     headers={"auth_token": user2_auth},
-    json={"source": base + "/get_feed/{user1_email}"},
+    json={"source": base + f"/get_feed/{user1_email}"},
 )
 assert resp.status_code == 200
 
 
 # They should still have 1 item each
-
+for auth_token in [user1_auth, user2_auth]:
+    items = requests.get(
+        base + "/get_items", headers={"auth_token": auth_token}
+    ).json()["items"]
+    print(len(items))
+    assert len(items) == 1
 
 # user1 reads and rates an item
 

@@ -112,6 +112,7 @@ app = FastAPI()
 
 
 async def detect_source_type(source: str):
+    print(source)
     if "@" in source and "get_feed" in source:
         return "spiel"
     return "rss"
@@ -119,7 +120,9 @@ async def detect_source_type(source: str):
 
 async def consume_source(source: str, source_type: str, email: str):
     if source_type == "spiel":
-        all_items = await aiohttp.get(source)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(source) as resp:
+                all_items = await resp.json()
         for item in all_items:
             uid = item.uid
             res = await select(
@@ -291,7 +294,7 @@ async def refresh_data():
         sources = await select("SELECT * FROM sources")
         for source in sources:
             await consume_source(source["source"], source["type"], source["email"])
-        time.sleep(0.33)
+        time.sleep(2)
 
 
 class BackgroundTasks(threading.Thread):

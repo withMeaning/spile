@@ -6,6 +6,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request
 import os
 import uvicorn
 from pydantic import BaseModel
+from typing import Optional
 import aiohttp
 from typing import Annotated, Tuple
 import asyncio
@@ -36,7 +37,7 @@ def create_tables():
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS items (
-                id TEXT PRIMARY KEY,
+                uid TEXT,
                 identifier TEXT,
                 title TEXT,
                 author TEXT,
@@ -44,20 +45,33 @@ def create_tables():
                 summary TEXT,
                 link TEXT,
                 type TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 email TEXT,
                 FOREIGN KEY (email) REFERENCES users(email),
                 UNIQUE(uid, email)
             );
             """
         )
-        # resonance INTEGER, feedback TEXT, view_date TIMESTAMP, received_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS sources (
                 source TEXT,
                 type TEXT,
                 email TEXT,
+                FOREIGN KEY (email) REFERENCES users(email)
+            )
+            """
+        )
+
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reading_order (
+                item_uid TEXT,
+                item_order INT,
+                archived BOOLEAN,
+                email TEXT,
+                FOREIGN KEY (item_uid) REFERENCES items(uid),
                 FOREIGN KEY (email) REFERENCES users(email)
             )
             """
@@ -98,6 +112,12 @@ async def select(q: str, one: bool = False):
                 return res[0]
             return [x for x in res]
 
+async def mut_query(q: str):
+    async with aiosqlite.connect("spile.db") as con:
+        async with con.cursor() as cur:
+            await cur.execute(q)
+            await con.commit()
+
 
 async def auth(req: Request):
     auth_token = req.headers.get("auth_token", None)
@@ -115,14 +135,13 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "https://read-nine.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 async def detect_source_type(source: str):
-    print(source)
     if "@" in source and "get_feed" in source:
         return "spiel"
     return "rss"
@@ -134,25 +153,39 @@ async def consume_source(source: str, source_type: str, email: str):
             async with session.get(source) as resp:
                 all_items = await resp.json()
         for item in all_items:
-            uid = item.uid
+            reading_item = item["read"]
             res = await select(
-                "SELECT COUNT(*) as c FROM items WHERE email='{email}' and uid='{uid}'",
+                f"SELECT COUNT(*) as c FROM items WHERE email='{email}' and link='{reading_item['link']}'",
                 True,
             )
             if res["c"] > 0:
                 # @TODO If item already exists merge all the `views` into one
                 pass
             else:
+                uid = generate_content_uid(reading_item["content"] + reading_item["type"] + email + str(reading_item["link"]))
                 await insert(
                     "items",
                     [
                         {
-                            "item_content": item.content,
-                            "item_type": item.type,
+                            "author": reading_item["author"],
+                            "summary": reading_item["summary"],
+                            "title": reading_item["title"],
+                            "link": reading_item["link"],
+                            "content": reading_item["content"],
+                            "type": reading_item["type"],
                             "uid": uid,
                             "email": email,
                         }
                     ],
+                )
+                await insert(
+                    "reading_order",
+                    [{
+                        "item_uid": uid,
+                        "item_order": None,
+                        "archived": False,
+                        "email": email,
+                    }]
                 )
     elif source_type == "rss":
         print("RSS not implemented yet!")
@@ -192,60 +225,81 @@ async def create_user(
         return {"email": body.email, "auth_token": new_user_auth_token}
 
 
-@app.post("/rate_item")
-async def rate_item(
-    uid: str,
-    feedback: str,
-    resonance: int,
-    auth_data: Annotated[tuple[str], Depends(auth)],
-):
-    async with aiosqlite.connect("spile.db") as db:
-        await db.execute(
-            f"UPDATE TABLE items SET feedback='{feedback}', resonance={resonance} WHERE uid='{uid}' AND email='{auth_data[0]}'"
-        )
-
-
 @app.get("/get_items")
 async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
     async with aiosqlite.connect("spile.db") as db:
-        all_consumeable = await select(
-            f"SELECT * FROM items WHERE email='{auth_data[0]}'"
-        )
-        print(all_consumeable)
+        q = f"SELECT * FROM items INNER JOIN reading_order ON items.uid=reading_order.item_uid AND reading_order.email='{auth_data[0]}'  AND reading_order.archived=false WHERE items.email='{auth_data[0]}' and items.type='read'"
+        print(q)
+        all_consumeable = await select(q)
+        
     return {"updateAt": datetime.datetime.now(), "items": all_consumeable}
 
 
-class CreateItemBody(BaseModel):
-    title: str
+class AddItemBody(BaseModel):
+    title: Optional[str]
     content: str
     link: str
-    email: str
     type: str
 
 
 @app.post("/add_item")
 async def add_item(
-    body: CreateItemBody,
+    body: AddItemBody,
     auth_data: Annotated[tuple[str], Depends(auth)]
 ):
+    uid = generate_content_uid(body.content + body.type + auth_data[0] + str(body.link))
     await insert(
         "items",
         [
             {
-                "uid": generate_content_uid(body.content),
-                "content": json.dumps(
-                    {
-                        "title": body.title,
-                        "content": body.content,
-                        "link": body.link,
-                    }
-                ),
+                "uid": uid,
+                "title": body.title,
+                "content": body.content,
+                "link": body.link,
                 "email": auth_data[0],
+                "type": body.type,
             }
         ],
     )
+    if body.type == "read":
+        await insert(
+                    "reading_order",
+                    [{
+                        "item_uid": uid,
+                        "item_order": None,
+                        "archived": False,
+                        "email": auth_data[0],
+                    }]
+                )
     return body
 
+
+
+class ArchiveItemBody(BaseModel):
+    archived: bool
+    uid: str
+
+
+@app.post("/archive")
+async def archive(
+    body: ArchiveItemBody,
+    auth_data: Annotated[tuple[str], Depends(auth)]
+):
+    mut_query("UPDATE TABLE reading_order SET archived={str(body.archived.lower())} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'")
+    return ""
+
+class OrderItemBody(BaseModel):
+    item_order: int
+    uid: str
+
+
+@app.post("/order")
+async def order(
+    body: ArchiveItemBody,
+    auth_data: Annotated[tuple[str], Depends(auth)]
+):
+    mut_query("UPDATE TABLE reading_order SET order={body.order} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'")
+    return ""
 
 class AddSourceBody(BaseModel):
     source: str
@@ -261,27 +315,24 @@ async def add_source(data: AddSourceBody, auth_data: Annotated[tuple[str], Depen
 
 @app.get("/get_feed/{user_email}")
 async def get_feed(user_email: str):
-    all_consumeable = await select(
-        "SELECT uid, content, type, resonance, feedback FROM items WHERE email='{user_email}' AND view_date is not null"
+    # Rules based on which the user recommends stuff to other people @TODO (this endpoint can accept an optional email, so the user can recommend to specific individuals(?))
+    resonance_items = await select(f"SELECT content, link FROM items WHERE email='{user_email}' AND type='resonance'")
+    send_item_uids = []
+    for resonance_item in resonance_items:
+        if int(resonance_item["content"]) > 80:
+            send_item_uids.append(resonance_item["link"])
+
+    send_item_uids = ','.join([f"'{x}'" for x in send_item_uids])
+    reading_items = await select(
+        f"SELECT * FROM items WHERE uid in ({send_item_uids})"
     )
     consumable_objs = []
-    for val in all_consumeable:
-        consumable_obj = json.loads(val[1])
-        consumable_obj.views.append(
-            {
-                "viewer": user_email,
-                "resonance": val["resonance"],
-                "feedback": val["feedback"],
-            }
-        )
-        consumable_objs.append(
-            {
-                "uid": val["uid"],
-                "type": val["type"],
-                "content": consumable_obj,
-            }
-        )
-    return all_consumeable
+    for reading_item in reading_items:
+        consumable_objs.append({
+            "read": reading_item,
+            "reasons": [{}] # e.g. the resonance item
+        })
+    return consumable_objs
 
 
 @app.get("/get_feed/{user_email}.rss")
@@ -326,7 +377,7 @@ if __name__ == "__main__":
         port = int(sys.argv[1])
     else:
         port = 8080
-    if os.environ.get("SPILE_ENV", "development") == "production":
+    if os.environ.get("SPILE_ENV", "devitem_uidelopment") == "production":
         uvicorn.run("main:app", port=port, host="0.0.0.0", workers=4)
     else:
         uvicorn.run("main:app", port=port, host="0.0.0.0", reload=True)

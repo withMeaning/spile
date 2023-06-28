@@ -2,6 +2,7 @@ import requests
 import sqlite3
 import json
 import os
+import time
 
 
 # A server runs on 8080 using spile.db with and admin account
@@ -46,8 +47,7 @@ for auth, email in [(user1_auth, user1_email), (user2_auth, user2_email)]:
         json={
             "title": "Hello",
             "content": "Blob",
-            "link": "Link.de",
-            "email": email,
+            "link": f"Link.de/subscriber_email={email}",
             "type": "read",
         },
     )
@@ -76,6 +76,7 @@ resp = requests.post(
 assert resp.status_code == 200
 
 
+time.sleep(1.5)
 # They should still have 1 item each
 for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
@@ -85,18 +86,68 @@ for auth_token in [user1_auth, user2_auth]:
     assert len(items) == 1
 
 # user1 reads and rates an item
+res = requests.get(
+    base + "/get_items",
+    headers={"auth_token": user1_auth},
+)
+assert res.status_code == 200
+read_item = res.json()["items"][0]
+res = requests.post(
+    base + "/add_item",
+    headers={"auth_token": user1_auth},
+    json={
+        "content": "95",
+        "link": read_item["uid"],
+        "type": "resonance",
+    },
+)
+time.sleep(2)
+items = requests.get(
+    base + "/get_items", headers={"auth_token": user2_auth}
+).json()["items"]
+print(items)
+assert len(items) == 2
 
+# User 2 reads and rates, it has low resonance
+res = requests.get(
+    base + "/get_items",
+    headers={"auth_token": user2_auth},
+)
+assert res.status_code == 200
+read_item = res.json()["items"][0]
+res = requests.post(
+    base + "/add_item",
+    headers={"auth_token": user2_auth},
+    json={
+        "content": "10",
+        "link": read_item["uid"],
+        "type": "resonance",
+    },
+)
+time.sleep(1.5)
+items = requests.get(
+    base + "/get_items", headers={"auth_token": user1_auth}
+).json()["items"]
+assert len(items) == 1
 
-# user2 should have 2x items now
+# Test Item Archive and Order
+items = requests.get(
+    base + "/get_items", headers={"auth_token": user2_auth}
+).json()["items"]
 
+resp = requests.post(
+    base + "/archive", headers={"auth_token": user2_auth}, json={
+        "uid": items[0]["uid"],
+        "archived": True,
+    }
+)
+assert resp.status_code == 200
 
-# user2 rates his original item
+items = requests.get(
+    base + "/get_items", headers={"auth_token": user2_auth}
+).json()["items"]
+assert len(items) == 1
+print("All tests passed")
 
-
-# Both now have 1x item, but with the meaningdata from the other on top and the uids reversed
-
-
-# Adding an rss feed to user1 results in him getting more items from that
-
-
-# And user1 is also able to generate a valid rss feed with the same amount of items as the source + 1 (the one he rated already)
+# Subscribe user1 to nintil's RSS
+# https://nintil.com/rss.xml

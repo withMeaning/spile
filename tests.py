@@ -57,7 +57,6 @@ for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
         base + "/get_items", headers={"auth_token": auth_token}
     ).json()["items"]
-    print(len(items))
     assert len(items) == 1
 
 
@@ -82,7 +81,6 @@ for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
         base + "/get_items", headers={"auth_token": auth_token}
     ).json()["items"]
-    print(len(items))
     assert len(items) == 1
 
 # user1 reads and rates an item
@@ -105,7 +103,7 @@ time.sleep(2)
 items = requests.get(base + "/get_items", headers={"auth_token": user2_auth}).json()[
     "items"
 ]
-print(items)
+
 assert len(items) == 2
 
 # User 2 reads and rates, it has low resonance

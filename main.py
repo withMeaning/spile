@@ -291,8 +291,11 @@ class ArchiveItemBody(BaseModel):
 async def archive(
     body: ArchiveItemBody, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
-    mut_query(
-        "UPDATE TABLE reading_order SET archived={str(body.archived.lower())} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
+    print(
+        f"UPDATE reading_order SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
+    )
+    await mut_query(
+        f"UPDATE reading_order SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
     )
     return ""
 
@@ -304,8 +307,8 @@ class OrderItemBody(BaseModel):
 
 @app.post("/order")
 async def order(body: ArchiveItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
-    mut_query(
-        "UPDATE TABLE reading_order SET order={body.order} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
+    await mut_query(
+        f"UPDATE reading_order SET order={body.order} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
     )
     return ""
 

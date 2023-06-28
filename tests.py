@@ -102,9 +102,9 @@ res = requests.post(
     },
 )
 time.sleep(2)
-items = requests.get(
-    base + "/get_items", headers={"auth_token": user2_auth}
-).json()["items"]
+items = requests.get(base + "/get_items", headers={"auth_token": user2_auth}).json()[
+    "items"
+]
 print(items)
 assert len(items) == 2
 
@@ -125,27 +125,29 @@ res = requests.post(
     },
 )
 time.sleep(1.5)
-items = requests.get(
-    base + "/get_items", headers={"auth_token": user1_auth}
-).json()["items"]
+items = requests.get(base + "/get_items", headers={"auth_token": user1_auth}).json()[
+    "items"
+]
 assert len(items) == 1
 
 # Test Item Archive and Order
-items = requests.get(
-    base + "/get_items", headers={"auth_token": user2_auth}
-).json()["items"]
+items = requests.get(base + "/get_items", headers={"auth_token": user2_auth}).json()[
+    "items"
+]
 
 resp = requests.post(
-    base + "/archive", headers={"auth_token": user2_auth}, json={
+    base + "/archive",
+    headers={"auth_token": user2_auth},
+    json={
         "uid": items[0]["uid"],
         "archived": True,
-    }
+    },
 )
 assert resp.status_code == 200
 
-items = requests.get(
-    base + "/get_items", headers={"auth_token": user2_auth}
-).json()["items"]
+items = requests.get(base + "/get_items", headers={"auth_token": user2_auth}).json()[
+    "items"
+]
 assert len(items) == 1
 print("All tests passed")
 

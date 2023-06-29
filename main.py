@@ -6,7 +6,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request
 import os
 import uvicorn
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 import aiohttp
 from typing import Annotated, Tuple
 import asyncio
@@ -70,6 +70,7 @@ def create_tables():
                 item_uid TEXT,
                 item_order INT,
                 archived BOOLEAN,
+                done BOOLEAN,
                 email TEXT,
                 FOREIGN KEY (item_uid) REFERENCES items(uid),
                 FOREIGN KEY (email) REFERENCES users(email)
@@ -185,6 +186,10 @@ async def consume_source(source: str, source_type: str, email: str):
                         }
                     ],
                 )
+                if (reading_item["type"] == "do"):
+                    do_state = False
+                else:
+                    do_state = None
                 await insert(
                     "reading_order",
                     [
@@ -192,6 +197,7 @@ async def consume_source(source: str, source_type: str, email: str):
                             "item_uid": uid,
                             "item_order": None,
                             "archived": False,
+                            "done": do_state,
                             "email": email,
                         }
                     ],
@@ -237,7 +243,7 @@ async def create_user(
 @app.get("/get_items")
 async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
     async with aiosqlite.connect("spile.db") as db:
-        q = f"SELECT * FROM items INNER JOIN reading_order ON items.uid=reading_order.item_uid AND reading_order.email='{auth_data[0]}'  AND reading_order.archived=false WHERE items.email='{auth_data[0]}' and items.type='read'"
+        q = f"SELECT * FROM items INNER JOIN reading_order ON items.uid=reading_order.item_uid AND reading_order.email='{auth_data[0]}'  AND reading_order.archived=false WHERE items.email='{auth_data[0]}' and items.type='read' or items.type='do' ORDER BY reading_order.item_order"
         print(q)
         all_consumeable = await select(q)
 
@@ -249,11 +255,12 @@ class AddItemBody(BaseModel):
     content: str
     link: str
     type: str
+    author: Optional[str]
 
 
 @app.post("/add_item")
 async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
-    uid = generate_content_uid(body.content + body.type + auth_data[0] + str(body.link))
+    uid = generate_content_uid((body.title or "")  + body.content + body.type + auth_data[0] + str(body.link))
     await insert(
         "items",
         [
@@ -264,6 +271,7 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                 "link": body.link,
                 "email": auth_data[0],
                 "type": body.type,
+                "author": body.author,
             }
         ],
     )
@@ -275,6 +283,19 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                     "item_uid": uid,
                     "item_order": None,
                     "archived": False,
+                    "email": auth_data[0],
+                }
+            ],
+        )
+    if body.type == "do":
+        await insert(
+            "reading_order",
+            [
+                {
+                    "item_uid": uid,
+                    "item_order": None,
+                    "archived": False,
+                    "done": False,
                     "email": auth_data[0],
                 }
             ],
@@ -291,25 +312,45 @@ class ArchiveItemBody(BaseModel):
 async def archive(
     body: ArchiveItemBody, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
-    print(
+    """ print(
         f"UPDATE reading_order SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
-    )
+    ) """
     await mut_query(
         f"UPDATE reading_order SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
     )
     return ""
 
-
-class OrderItemBody(BaseModel):
-    item_order: int
+class DoneItemBody(BaseModel):
+    done: bool
     uid: str
 
+@app.post("/done")
+async def archive(
+    body: DoneItemBody, auth_data: Annotated[tuple[str], Depends(auth)]
+):
+    """ print(
+        f"UPDATE reading_order SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
+    ) """
+    await mut_query(
+        f"UPDATE reading_order SET done={str(body.done).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
+    )
+    return ""
+
+class OrderItemBody(BaseModel):
+    order: int
+    uid: str
+    
+class Order(BaseModel):
+     items: List[OrderItemBody]
 
 @app.post("/order")
-async def order(body: ArchiveItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
-    await mut_query(
-        f"UPDATE reading_order SET order={body.order} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
-    )
+async def order(body: Order, auth_data: Annotated[tuple[str], Depends(auth)]):
+    print(body)
+    for item in body.items:
+        print(item)
+        await mut_query(
+            f"UPDATE reading_order SET item_order={item.order} WHERE item_uid='{item.uid}' AND email='{auth_data[0]}'"
+        )
     return ""
 
 

@@ -149,6 +149,17 @@ items = requests.get(base + "/get_items", headers={"auth_token": user2_auth}).js
     "items"
 ]
 assert len(items) == 1
+
+resp = requests.post(
+    base + "/done",
+    headers={"auth_token": user2_auth},
+    json={
+        "uid": items[0]["uid"],
+        "done": True,
+    },
+)
+assert resp.status_code == 200
+
 print("All tests passed")
 
 # Subscribe user1 to nintil's RSS

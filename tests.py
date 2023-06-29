@@ -31,6 +31,8 @@ user2_auth = requests.post(
     json={"email": user2_email, "is_admin": True},
 ).json()["auth_token"]
 
+print(user1_auth)
+print(user2_auth)
 # Both users should have no items
 for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
@@ -45,8 +47,8 @@ for auth, email in [(user1_auth, user1_email), (user2_auth, user2_email)]:
         base + "/add_item",
         headers={"auth_token": auth},
         json={
-            "title": "Hello",
-            "content": "Blob",
+            "title": f"Hello from {email}",
+            "content": "This is a long string of text",
             "link": f"Link.de/subscriber_email={email}",
             "type": "read",
         },

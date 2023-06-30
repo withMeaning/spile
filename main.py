@@ -124,10 +124,12 @@ async def mut_query(q: str):
 async def auth(req: Request):
     auth_token = req.headers.get("auth_token", None)
     async with aiosqlite.connect("spile.db") as db:
+        if auth_token is None:
+            raise HTTPException(status_code=401, detail="No auth provided")
+
         res = await select(
             f"SELECT email, is_admin FROM users WHERE auth_token='{auth_token}'", True
         )
-
         if res is None:
             raise HTTPException(status_code=401, detail="Unauthorized")
         return res["email"], res["is_admin"]
@@ -234,6 +236,20 @@ async def create_user(
                     "email": body.email,
                     "auth_token": new_user_auth_token,
                     "is_admin": str(body.is_admin).lower(),
+                }
+            ],
+        )
+        await insert(
+            "items",
+            [
+                {
+                    "uid": "first" + body.email,
+                    "title": "Welcome",
+                    "content": "This is the start of ...",
+                    "link": "",
+                    "email": body.email,
+                    "type": "read",
+                    "author": "",
                 }
             ],
         )

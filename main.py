@@ -218,43 +218,6 @@ def generate_content_uid(content: str):
     return str(md5(content.encode("utf-8")).hexdigest())
 
 
-class CreateUserBody(BaseModel):
-    email: str
-    is_admin: bool
-
-
-@app.post("/create_user")
-async def create_user(
-    body: CreateUserBody, auth_data: Annotated[tuple[str], Depends(auth)]
-):
-    if auth_data[1]:
-        new_user_auth_token = generate_auth_token()
-        await insert(
-            "users",
-            [
-                {
-                    "email": body.email,
-                    "auth_token": new_user_auth_token,
-                    "is_admin": str(body.is_admin).lower(),
-                }
-            ],
-        )
-        await insert(
-            "items",
-            [
-                {
-                    "uid": "first" + body.email,
-                    "title": "Welcome",
-                    "content": "This is the start of ...",
-                    "link": "",
-                    "email": body.email,
-                    "type": "read",
-                    "author": "",
-                }
-            ],
-        )
-        return {"email": body.email, "auth_token": new_user_auth_token}
-
 
 @app.get("/get_items")
 async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
@@ -318,6 +281,45 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
         )
     return body
 
+class CreateUserBody(BaseModel):
+    email: str
+    is_admin: bool
+
+
+@app.post("/create_user")
+async def create_user(
+    body: CreateUserBody, auth_data: Annotated[tuple[str], Depends(auth)]
+):
+    if auth_data[1]:
+        new_user_auth_token = generate_auth_token()
+        await insert(
+            "users",
+            [
+                {
+                    "email": body.email,
+                    "auth_token": new_user_auth_token,
+                    "is_admin": str(body.is_admin).lower(),
+                }
+            ],
+        )
+        json = AddItemBody(title="Welcome", content="This is the start of ...", type="read", link="")
+        add_item(json, [body.email, new_user_auth_token])
+        return {"email": body.email, "auth_token": new_user_auth_token}
+
+""" await insert(
+            "items",
+            [
+                {
+                    "uid": "first" + body.email,
+                    "title": "Welcome",
+                    "content": "This is the start of ...",
+                    "link": "",
+                    "email": body.email,
+                    "type": "read",
+                    "author": "",
+                }
+            ],
+        ) """
 
 class ArchiveItemBody(BaseModel):
     archived: bool

@@ -305,7 +305,7 @@ async def create_user(
         )
         json = AddItemBody(title="Welcome", content="This is the start of ...", type="read", link="")
         print(json, [body.email, new_user_auth_token])
-        add_item(json, [body.email, new_user_auth_token])
+        await add_item(json, [body.email, new_user_auth_token])
         return {"email": body.email, "auth_token": new_user_auth_token}
 
 """ await insert(

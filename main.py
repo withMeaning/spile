@@ -239,6 +239,7 @@ class AddItemBody(BaseModel):
 
 @app.post("/add_item")
 async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
+    print(body, auth_data)
     uid = generate_content_uid((body.title or "")  + body.content + body.type + auth_data[0] + str(body.link))
     await insert(
         "items",
@@ -303,6 +304,7 @@ async def create_user(
             ],
         )
         json = AddItemBody(title="Welcome", content="This is the start of ...", type="read", link="")
+        print(json, [body.email, new_user_auth_token])
         add_item(json, [body.email, new_user_auth_token])
         return {"email": body.email, "auth_token": new_user_auth_token}
 

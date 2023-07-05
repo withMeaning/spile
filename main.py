@@ -139,7 +139,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://read-nine.vercel.app", "https://reader.withmeaning.io"],
+    allow_origins=["http://localhost:5173", "https://read-nine.vercel.app", "https://reader.withmeaning.io", "https://naext.one"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -307,22 +307,7 @@ async def create_user(
         print(json, [body.email, new_user_auth_token])
         await add_item(json, [body.email, new_user_auth_token])
         return {"email": body.email, "auth_token": new_user_auth_token}
-
-""" await insert(
-            "items",
-            [
-                {
-                    "uid": "first" + body.email,
-                    "title": "Welcome",
-                    "content": "This is the start of ...",
-                    "link": "",
-                    "email": body.email,
-                    "type": "read",
-                    "author": "",
-                }
-            ],
-        ) """
-
+    
 class ArchiveItemBody(BaseModel):
     archived: bool
     uid: str

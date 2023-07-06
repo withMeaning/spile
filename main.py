@@ -15,6 +15,7 @@ from uuid import uuid4
 import threading
 import time
 import requests
+import re
 from hashlib import md5
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -71,6 +72,8 @@ def create_tables():
                 item_order INT,
                 archived BOOLEAN,
                 done BOOLEAN,
+                iframe BOOLEAN,
+                url_title TEXT,
                 email TEXT,
                 FOREIGN KEY (item_uid) REFERENCES items(uid),
                 FOREIGN KEY (email) REFERENCES users(email)
@@ -241,6 +244,18 @@ class AddItemBody(BaseModel):
 async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
     print(body, auth_data)
     uid = generate_content_uid((body.title or "")  + body.content + body.type + auth_data[0] + str(body.link))
+    if body.link and body.link.startswith("http"):
+        iframeRes = requests.get(body.link)
+        if not iframeRes.headers.get('X-Frame-Options'):
+            iframeYes = True
+            urlTitle  = re.search('<meta property="og:title" content="(.*?)"', iframeRes.text).group(1)
+            print(urlTitle)
+        else:
+            iframeYes = False
+            urlTitle = None
+    else:
+        iframeYes = False
+        urlTitle = None
     await insert(
         "items",
         [
@@ -263,6 +278,8 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                     "item_uid": uid,
                     "item_order": None,
                     "archived": False,
+                    "iframe": iframeYes,
+                    "url_title": urlTitle,
                     "email": auth_data[0],
                 }
             ],
@@ -276,6 +293,8 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                     "item_order": None,
                     "archived": False,
                     "done": False,
+                    "iframe": iframeYes,
+                    "url_tile": urlTitle,
                     "email": auth_data[0],
                 }
             ],

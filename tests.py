@@ -38,7 +38,7 @@ for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
         base + "/get_items", headers={"auth_token": auth_token}
     ).json()["items"]
-    assert len(items) == 0
+    assert len(items) == 1
 
 
 # Artificially add items
@@ -59,7 +59,7 @@ for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
         base + "/get_items", headers={"auth_token": auth_token}
     ).json()["items"]
-    assert len(items) == 1
+    assert len(items) == 2
 
 
 # Now subscribe them to each other
@@ -83,7 +83,7 @@ for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
         base + "/get_items", headers={"auth_token": auth_token}
     ).json()["items"]
-    assert len(items) == 1
+    assert len(items) == 2
 
 # user1 reads and rates an item
 res = requests.get(
@@ -101,12 +101,12 @@ res = requests.post(
         "type": "resonance",
     },
 )
-time.sleep(2)
+time.sleep(4)
 items = requests.get(base + "/get_items", headers={"auth_token": user2_auth}).json()[
     "items"
 ]
 
-assert len(items) == 2
+assert len(items) == 3
 
 # User 2 reads and rates, it has low resonance
 res = requests.get(

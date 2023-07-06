@@ -248,8 +248,9 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
         iframeRes = requests.get(body.link)
         if not iframeRes.headers.get('X-Frame-Options'):
             iframeYes = True
-            urlTitle  = re.search('<meta property="og:title" content="(.*?)"', iframeRes.text).group(1)
-            print(urlTitle)
+            urlTitle  = re.search('<meta property="og:title" content="(.*?)"', iframeRes.text)
+            if urlTitle:
+                urlTitle = urlTitle.group(1)
         else:
             iframeYes = False
             urlTitle = None

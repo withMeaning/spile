@@ -295,7 +295,7 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                     "archived": False,
                     "done": False,
                     "iframe": iframeYes,
-                    "url_tile": urlTitle,
+                    "url_title": urlTitle,
                     "email": auth_data[0],
                 }
             ],

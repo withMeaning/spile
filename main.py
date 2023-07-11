@@ -231,6 +231,10 @@ async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
 
     return {"updateAt": datetime.datetime.now(), "items": all_consumeable}
 
+@app.get("/auth_session")
+async def auth_session(auth_data: Annotated[tuple[str], Depends(auth)]):
+    # TODO: This should return a session token, if we want to implement auth from scratch 
+    return True
 
 class AddItemBody(BaseModel):
     title: Optional[str]

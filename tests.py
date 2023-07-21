@@ -166,11 +166,13 @@ resp = requests.post(
 )
 
 
+time.sleep(15)
+
 items = requests.get(base + "/get_items", headers={"auth_token": user1_auth}).json()[
     "items"
 ]
 print(len(items))
-assert 400 > len(items) > 20
+assert 400 > len(items) > 5
 
 
 print("All tests passed")

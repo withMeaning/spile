@@ -17,6 +17,7 @@ import time
 from hashlib import md5
 from fastapi.middleware.cors import CORSMiddleware
 from rss_parser import Parser
+import markdownify
 
 
 # Note orm will make it harder to split and modify, though make coding easier, so for now we aren't
@@ -214,41 +215,51 @@ async def consume_source(source: str, source_type: str, email: str):
                 rss_text = await resp.text()
         rss = Parser.parse(rss_text)
         for reading_item in rss.channel.items:
-            print(reading_item.content)
             uid = generate_content_uid(
-                reading_item.content + "read" + email + str(reading_item.link)
+                reading_item.content.description.content + "read" + email + str(reading_item.link)
             )
-            await insert(
-                "items",
-                [
-                    {
-                        "author": reading_item.author,
-                        "summary": reading_item.summary,
-                        "title": reading_item.title,
-                        "link": reading_item.link,
-                        "content": reading_item.content,
-                        "type": reading_item.type,
-                        "uid": uid,
-                        "email": email,
-                    }
-                ],
+            link = reading_item.content.link.content
+            res = await select(
+                f"SELECT COUNT(*) as c FROM items WHERE email='{email}' and link='{link}'",
+                True,
             )
-            if reading_item["type"] == "do":
-                do_state = False
+            if res["c"] > 0:
+                # @TODO If item already exists merge all the `views` into one
+                pass
             else:
-                do_state = None
-            await insert(
-                "reading_order",
-                [
-                    {
-                        "item_uid": uid,
-                        "item_order": None,
-                        "archived": False,
-                        "done": do_state,
-                        "email": email,
-                    }
-                ],
-            )
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(f"https://api.diffbot.com/v3/article?url={link}&token=6165e93d46dfa342d862a975c813a296") as resp:
+                        obj = await resp.json()
+                        print(obj)
+                        html = obj["objects"][0]["html"]
+                md = markdownify.markdownify(html, heading_style="ATX")
+                await insert(
+                    "items",
+                    [
+                        {
+                            "author": reading_item.content.author.content if reading_item.content.author else None,
+                            "summary": reading_item.content.description.content if reading_item.content.description else "",
+                            "title": reading_item.content.title.content if reading_item.content.title else "",
+                            "link": link,
+                            "content": md, # @TODO USE THE API!
+                            "type": "read",
+                            "uid": uid,
+                            "email": email,
+                        }
+                    ],
+                )
+                await insert(
+                    "reading_order",
+                    [
+                        {
+                            "item_uid": uid,
+                            "item_order": None,
+                            "archived": False,
+                            "done": None,
+                            "email": email,
+                        }
+                    ],
+                )
     else:
         raise ValueError(f"Unknown source type: `{source_type}` for source `{source}`!")
 

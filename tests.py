@@ -31,14 +31,12 @@ user2_auth = requests.post(
     json={"email": user2_email, "is_admin": True},
 ).json()["auth_token"]
 
-print(user1_auth)
-print(user2_auth)
 # Both users should have no items
 for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
         base + "/get_items", headers={"auth_token": auth_token}
     ).json()["items"]
-    assert len(items) == 1
+    assert len(items) == 0
 
 
 # Artificially add items
@@ -59,7 +57,7 @@ for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
         base + "/get_items", headers={"auth_token": auth_token}
     ).json()["items"]
-    assert len(items) == 2
+    assert len(items) == 1
 
 
 # Now subscribe them to each other
@@ -83,7 +81,7 @@ for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
         base + "/get_items", headers={"auth_token": auth_token}
     ).json()["items"]
-    assert len(items) == 2
+    assert len(items) == 1
 
 # user1 reads and rates an item
 res = requests.get(
@@ -101,12 +99,12 @@ res = requests.post(
         "type": "resonance",
     },
 )
-time.sleep(4)
+time.sleep(2)
 items = requests.get(base + "/get_items", headers={"auth_token": user2_auth}).json()[
     "items"
 ]
 
-assert len(items) == 3
+assert len(items) == 2
 
 # User 2 reads and rates, it has low resonance
 res = requests.get(
@@ -160,7 +158,19 @@ resp = requests.post(
 )
 assert resp.status_code == 200
 
-print("All tests passed")
-
 # Subscribe user1 to nintil's RSS
-# https://nintil.com/rss.xml
+resp = requests.post(
+    base + "/add_source",
+    headers={"auth_token": user1_auth},
+    json={"source": "https://nintil.com/rss.xml"},
+)
+
+
+items = requests.get(base + "/get_items", headers={"auth_token": user1_auth}).json()[
+    "items"
+]
+print(len(items))
+assert 400 > len(items) > 20
+
+
+print("All tests passed")

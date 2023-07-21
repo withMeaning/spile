@@ -14,10 +14,9 @@ import sqlite3
 from uuid import uuid4
 import threading
 import time
-import requests
-import re
 from hashlib import md5
 from fastapi.middleware.cors import CORSMiddleware
+from rss_parser import Parser
 
 
 # Note orm will make it harder to split and modify, though make coding easier, so for now we aren't
@@ -72,8 +71,6 @@ def create_tables():
                 item_order INT,
                 archived BOOLEAN,
                 done BOOLEAN,
-                iframe BOOLEAN,
-                url_title TEXT,
                 email TEXT,
                 FOREIGN KEY (item_uid) REFERENCES items(uid),
                 FOREIGN KEY (email) REFERENCES users(email)
@@ -142,7 +139,11 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","http://localhost:52529", "https://read-nine.vercel.app", "https://reader.withmeaning.io", "https://naext.one"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://read-nine.vercel.app",
+        "https://reader.withmeaning.io",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -191,7 +192,7 @@ async def consume_source(source: str, source_type: str, email: str):
                         }
                     ],
                 )
-                if (reading_item["type"] == "do"):
+                if reading_item["type"] == "do":
                     do_state = False
                 else:
                     do_state = None
@@ -208,7 +209,46 @@ async def consume_source(source: str, source_type: str, email: str):
                     ],
                 )
     elif source_type == "rss":
-        print("RSS not implemented yet!")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(source) as resp:
+                rss_text = await resp.text()
+        rss = Parser.parse(rss_text)
+        for reading_item in rss.channel.items:
+            print(reading_item.content)
+            uid = generate_content_uid(
+                reading_item.content + "read" + email + str(reading_item.link)
+            )
+            await insert(
+                "items",
+                [
+                    {
+                        "author": reading_item.author,
+                        "summary": reading_item.summary,
+                        "title": reading_item.title,
+                        "link": reading_item.link,
+                        "content": reading_item.content,
+                        "type": reading_item.type,
+                        "uid": uid,
+                        "email": email,
+                    }
+                ],
+            )
+            if reading_item["type"] == "do":
+                do_state = False
+            else:
+                do_state = None
+            await insert(
+                "reading_order",
+                [
+                    {
+                        "item_uid": uid,
+                        "item_order": None,
+                        "archived": False,
+                        "done": do_state,
+                        "email": email,
+                    }
+                ],
+            )
     else:
         raise ValueError(f"Unknown source type: `{source_type}` for source `{source}`!")
 
@@ -221,7 +261,6 @@ def generate_content_uid(content: str):
     return str(md5(content.encode("utf-8")).hexdigest())
 
 
-
 @app.get("/get_items")
 async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
     async with aiosqlite.connect("spile.db") as db:
@@ -231,10 +270,6 @@ async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
 
     return {"updateAt": datetime.datetime.now(), "items": all_consumeable}
 
-@app.get("/auth_session")
-async def auth_session(auth_data: Annotated[tuple[str], Depends(auth)]):
-    # TODO: This should return a session token, if we want to implement auth from scratch 
-    return True
 
 class AddItemBody(BaseModel):
     title: Optional[str]
@@ -246,21 +281,9 @@ class AddItemBody(BaseModel):
 
 @app.post("/add_item")
 async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
-    print(body, auth_data)
-    uid = generate_content_uid((body.title or "")  + body.content + body.type + auth_data[0] + str(body.link))
-    if body.link and body.link.startswith("http"):
-        iframeRes = requests.get(body.link)
-        if not iframeRes.headers.get('X-Frame-Options'):
-            iframeYes = True
-            urlTitle  = re.search('<meta property="og:title" content="(.*?)"', iframeRes.text)
-            if urlTitle:
-                urlTitle = urlTitle.group(1)
-        else:
-            iframeYes = False
-            urlTitle = None
-    else:
-        iframeYes = False
-        urlTitle = None
+    uid = generate_content_uid(
+        (body.title or "") + body.content + body.type + auth_data[0] + str(body.link)
+    )
     await insert(
         "items",
         [
@@ -283,8 +306,6 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                     "item_uid": uid,
                     "item_order": None,
                     "archived": False,
-                    "iframe": iframeYes,
-                    "url_title": urlTitle,
                     "email": auth_data[0],
                 }
             ],
@@ -298,13 +319,12 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                     "item_order": None,
                     "archived": False,
                     "done": False,
-                    "iframe": iframeYes,
-                    "url_title": urlTitle,
                     "email": auth_data[0],
                 }
             ],
         )
     return body
+
 
 class CreateUserBody(BaseModel):
     email: str
@@ -327,11 +347,12 @@ async def create_user(
                 }
             ],
         )
-        json = AddItemBody(title="Welcome", content="This is the start of ...", type="read", link="")
-        print(json, [body.email, new_user_auth_token])
-        await add_item(json, [body.email, new_user_auth_token])
+        # json = AddItemBody(title="Welcome", content="This is the start of ...", type="read", link="")
+        # print(json, [body.email, new_user_auth_token])
+        # await add_item(json, [body.email, new_user_auth_token])
         return {"email": body.email, "auth_token": new_user_auth_token}
-    
+
+
 class ArchiveItemBody(BaseModel):
     archived: bool
     uid: str
@@ -341,36 +362,39 @@ class ArchiveItemBody(BaseModel):
 async def archive(
     body: ArchiveItemBody, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
-    """ print(
+    """print(
         f"UPDATE reading_order SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
-    ) """
+    )"""
     await mut_query(
         f"UPDATE reading_order SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
     )
     return ""
+
 
 class DoneItemBody(BaseModel):
     done: bool
     uid: str
 
+
 @app.post("/done")
-async def archive(
-    body: DoneItemBody, auth_data: Annotated[tuple[str], Depends(auth)]
-):
-    """ print(
+async def archive(body: DoneItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
+    """print(
         f"UPDATE reading_order SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
-    ) """
+    )"""
     await mut_query(
         f"UPDATE reading_order SET done={str(body.done).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
     )
     return ""
 
+
 class OrderItemBody(BaseModel):
     order: int
     uid: str
-    
+
+
 class Order(BaseModel):
-     items: List[OrderItemBody]
+    items: List[OrderItemBody]
+
 
 @app.post("/order")
 async def order(body: Order, auth_data: Annotated[tuple[str], Depends(auth)]):
@@ -421,7 +445,12 @@ async def get_feed(user_email: str):
 
 @app.get("/get_feed/{user_email}.rss")
 async def get_feed_rss(user_email: str):
-    return "Not implemented"
+    async with aiosqlite.connect("spile.db") as db:
+        q = f"SELECT * FROM items INNER JOIN reading_order ON items.uid=reading_order.item_uid AND reading_order.email='{user_email}'  AND reading_order.archived=false WHERE items.email='{user_email}' and items.type='read' or items.type='do' ORDER BY reading_order.item_order"
+        print(q)
+        all_consumeable = await select(q)
+
+    return {"updateAt": datetime.datetime.now(), "items": all_consumeable}
 
 
 @app.get("/ping")

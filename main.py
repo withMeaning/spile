@@ -216,7 +216,10 @@ async def consume_source(source: str, source_type: str, email: str):
         rss = Parser.parse(rss_text)
         for reading_item in rss.channel.items:
             uid = generate_content_uid(
-                reading_item.content.description.content + "read" + email + str(reading_item.link)
+                reading_item.content.description.content
+                + "read"
+                + email
+                + str(reading_item.link)
             )
             link = reading_item.content.link.content
             res = await select(
@@ -228,7 +231,9 @@ async def consume_source(source: str, source_type: str, email: str):
                 pass
             else:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(f"https://api.diffbot.com/v3/article?url={link}&token=6165e93d46dfa342d862a975c813a296") as resp:
+                    async with session.get(
+                        f"https://api.diffbot.com/v3/article?url={link}&token=6165e93d46dfa342d862a975c813a296"
+                    ) as resp:
                         obj = await resp.json()
                         print(obj)
                         html = obj["objects"][0]["html"]
@@ -237,11 +242,17 @@ async def consume_source(source: str, source_type: str, email: str):
                     "items",
                     [
                         {
-                            "author": reading_item.content.author.content if reading_item.content.author else None,
-                            "summary": reading_item.content.description.content if reading_item.content.description else "",
-                            "title": reading_item.content.title.content if reading_item.content.title else "",
+                            "author": reading_item.content.author.content
+                            if reading_item.content.author
+                            else None,
+                            "summary": reading_item.content.description.content
+                            if reading_item.content.description
+                            else "",
+                            "title": reading_item.content.title.content
+                            if reading_item.content.title
+                            else "",
                             "link": link,
-                            "content": md, # @TODO USE THE API!
+                            "content": md,  # @TODO USE THE API!
                             "type": "read",
                             "uid": uid,
                             "email": email,

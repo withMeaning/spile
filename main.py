@@ -20,6 +20,18 @@ from rss_parser import Parser
 import markdownify
 
 
+async def link_to_md(link: str):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"https://api.diffbot.com/v3/article?url={link}&token=6165e93d46dfa342d862a975c813a296"
+        ) as resp:
+            obj = await resp.json()
+            print(obj)
+            html = obj["objects"][0]["html"]
+    md = markdownify.markdownify(html, heading_style="ATX")
+    return md
+
+
 # Note orm will make it harder to split and modify, though make coding easier, so for now we aren't
 # + async sqlalchemy is ergh and I don't want to investigate async ORMs right now
 def create_tables():
@@ -230,14 +242,7 @@ async def consume_source(source: str, source_type: str, email: str):
                 # @TODO If item already exists merge all the `views` into one
                 pass
             else:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        f"https://api.diffbot.com/v3/article?url={link}&token=6165e93d46dfa342d862a975c813a296"
-                    ) as resp:
-                        obj = await resp.json()
-                        print(obj)
-                        html = obj["objects"][0]["html"]
-                md = markdownify.markdownify(html, heading_style="ATX")
+                md = await link_to_md(link)
                 await insert(
                     "items",
                     [
@@ -295,7 +300,7 @@ async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
 
 class AddItemBody(BaseModel):
     title: Optional[str]
-    content: str
+    content: Optional[str]
     link: str
     type: str
     author: Optional[str]
@@ -303,6 +308,8 @@ class AddItemBody(BaseModel):
 
 @app.post("/add_item")
 async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
+    if not body.content:
+        body.content = await link_to_md(body.link)
     uid = generate_content_uid(
         (body.title or "") + body.content + body.type + auth_data[0] + str(body.link)
     )

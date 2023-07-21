@@ -3,3 +3,5 @@ uvicorn
 aiosqlite
 aiohttp
 markdownify
+rss_parser
+sqlalchemy

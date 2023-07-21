@@ -79,7 +79,7 @@ def create_tables():
 
         con.execute(
             """
-            CREATE TABLE IF NOT EXISTS reading_order (
+            CREATE TABLE IF NOT EXISTS item_reading_data (
                 item_uid TEXT,
                 item_order INT,
                 archived BOOLEAN,
@@ -210,7 +210,7 @@ async def consume_source(source: str, source_type: str, email: str):
                 else:
                     do_state = None
                 await insert(
-                    "reading_order",
+                    "item_reading_data",
                     [
                         {
                             "item_uid": uid,
@@ -265,7 +265,7 @@ async def consume_source(source: str, source_type: str, email: str):
                     ],
                 )
                 await insert(
-                    "reading_order",
+                    "item_reading_data",
                     [
                         {
                             "item_uid": uid,
@@ -291,7 +291,7 @@ def generate_content_uid(content: str):
 @app.get("/get_items")
 async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
     async with aiosqlite.connect("spile.db") as db:
-        q = f"SELECT * FROM items INNER JOIN reading_order ON items.uid=reading_order.item_uid AND reading_order.email='{auth_data[0]}'  AND reading_order.archived=false WHERE items.email='{auth_data[0]}' and items.type='read' or items.type='do' ORDER BY reading_order.item_order"
+        q = f"SELECT * FROM items INNER JOIN item_reading_data ON items.uid=item_reading_data.item_uid AND item_reading_data.email='{auth_data[0]}'  AND item_reading_data.archived=false WHERE items.email='{auth_data[0]}' and items.type='read' or items.type='do' ORDER BY item_reading_data.item_order"
         print(q)
         all_consumeable = await select(q)
 
@@ -310,7 +310,7 @@ class AddItemBody(BaseModel):
 async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
     if not body.content:
         body.content = await link_to_md(body.link)
-    uid = generate_content_uid(
+        uid = generate_content_uid(
         (body.title or "") + body.content + body.type + auth_data[0] + str(body.link)
     )
     await insert(
@@ -329,7 +329,7 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
     )
     if body.type == "read":
         await insert(
-            "reading_order",
+            "item_reading_data",
             [
                 {
                     "item_uid": uid,
@@ -341,7 +341,7 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
         )
     if body.type == "do":
         await insert(
-            "reading_order",
+            "item_reading_data",
             [
                 {
                     "item_uid": uid,
@@ -392,10 +392,10 @@ async def archive(
     body: ArchiveItemBody, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
     """print(
-        f"UPDATE reading_order SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
+        f"UPDATE item_reading_data SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
     )"""
     await mut_query(
-        f"UPDATE reading_order SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
+        f"UPDATE item_reading_data SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
     )
     return ""
 
@@ -408,10 +408,10 @@ class DoneItemBody(BaseModel):
 @app.post("/done")
 async def archive(body: DoneItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
     """print(
-        f"UPDATE reading_order SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
+        f"UPDATE item_reading_data SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
     )"""
     await mut_query(
-        f"UPDATE reading_order SET done={str(body.done).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
+        f"UPDATE item_reading_data SET done={str(body.done).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
     )
     return ""
 
@@ -431,7 +431,7 @@ async def order(body: Order, auth_data: Annotated[tuple[str], Depends(auth)]):
     for item in body.items:
         print(item)
         await mut_query(
-            f"UPDATE reading_order SET item_order={item.order} WHERE item_uid='{item.uid}' AND email='{auth_data[0]}'"
+            f"UPDATE item_reading_data SET item_order={item.order} WHERE item_uid='{item.uid}' AND email='{auth_data[0]}'"
         )
     return ""
 
@@ -475,7 +475,7 @@ async def get_feed(user_email: str):
 @app.get("/get_feed/{user_email}.rss")
 async def get_feed_rss(user_email: str):
     async with aiosqlite.connect("spile.db") as db:
-        q = f"SELECT * FROM items INNER JOIN reading_order ON items.uid=reading_order.item_uid AND reading_order.email='{user_email}'  AND reading_order.archived=false WHERE items.email='{user_email}' and items.type='read' or items.type='do' ORDER BY reading_order.item_order"
+        q = f"SELECT * FROM items INNER JOIN item_reading_data ON items.uid=item_reading_data.item_uid AND item_reading_data.email='{user_email}'  AND item_reading_data.archived=false WHERE items.email='{user_email}' and items.type='read' or items.type='do' ORDER BY item_reading_data.item_order"
         print(q)
         all_consumeable = await select(q)
 

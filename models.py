@@ -13,7 +13,9 @@ from sqlalchemy import (
     func,
     UniqueConstraint,
     Column,
+    create_engine,
 )
+import os
 
 
 class Base(orm.DeclarativeBase):
@@ -28,8 +30,8 @@ class User(Base):
     is_admin: orm.Mapped[bool] = orm.mapped_column(Boolean)
     email: orm.Mapped[str] = orm.mapped_column(Text)
 
-
     created_at = Column(DateTime, default=func.now())
+
 
 class Item(Base):
     __tablename__ = "items"
@@ -44,14 +46,13 @@ class Item(Base):
     type: orm.Mapped[str] = orm.mapped_column(Text)
     email: orm.Mapped[str] = orm.mapped_column(Text)
 
-    user_email = Column(Integer, ForeignKey('users.email'))
-    user = orm.relationship('User')
+    user_email = Column(Integer, ForeignKey("users.email"))
+    user = orm.relationship("User")
 
     created_at = Column(DateTime, default=func.now())
 
-    __table_args__ = (
-        UniqueConstraint('link', 'email', name='uix_uid_email'),
-    )
+    __table_args__ = (UniqueConstraint("link", "email", name="uix_uid_email"),)
+
 
 class Source(Base):
     __tablename__ = "sources"
@@ -61,8 +62,8 @@ class Source(Base):
     email: orm.Mapped[str] = orm.mapped_column(Text)
     uid: orm.Mapped[str] = orm.mapped_column(Text)
 
-    user_email = Column(Integer, ForeignKey('users.email'))
-    user = orm.relationship('User')
+    user_email = Column(Integer, ForeignKey("users.email"))
+    user = orm.relationship("User")
 
     created_at = Column(DateTime, default=func.now())
 
@@ -75,8 +76,16 @@ class ItemReadingOrder(Base):
     archived: orm.Mapped[bool] = orm.mapped_column(Boolean)
     done: orm.Mapped[bool] = orm.mapped_column(Boolean)
 
-    user_email = Column(Integer, ForeignKey('users.email'))
-    user = orm.relationship('User')
+    user_email = Column(Integer, ForeignKey("users.email"))
+    user = orm.relationship("User")
 
-    item_uid = Column(Integer, ForeignKey('items.uid'))
-    item = orm.relationship('Item')
+    item_uid = Column(Integer, ForeignKey("items.uid"))
+    item = orm.relationship("Item")
+
+
+db_url = os.environ.get(
+    "WM_DB_URL", "sqlite:///" + str(os.path.join(os.getcwd(), "spiel.db"))
+)
+print(f"Running on db url: {db_url}")
+engine = create_engine(db_url, echo=False)
+Base.metadata.create_all(engine)

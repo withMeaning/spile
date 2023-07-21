@@ -311,8 +311,12 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
     if not body.content:
         body.content = await link_to_md(body.link)
         uid = generate_content_uid(
-        (body.title or "") + body.content + body.type + auth_data[0] + str(body.link)
-    )
+            (body.title or "")
+            + body.content
+            + body.type
+            + auth_data[0]
+            + str(body.link)
+        )
     await insert(
         "items",
         [

@@ -63,7 +63,7 @@ async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
                 .where(
                     ReadingItemData.user_email == auth_data[0],
                     ReadingItemData.archived == False,
-                    ReadingItemData.item.any(Item.type.in_("read", "do")),
+                    ReadingItemData.item.has(Item.type.in_(["read", "do"])),
                 )
                 .order_by(desc(ReadingItemData.item_order))
             )

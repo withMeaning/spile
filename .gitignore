@@ -1,3 +1,4 @@
 *.db
 *__pycache__*
 spile.db
+mp3_cache/*

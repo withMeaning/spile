@@ -5,3 +5,4 @@ aiohttp
 markdownify
 rss_parser
 sqlalchemy
+google-cloud-texttospeech

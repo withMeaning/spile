@@ -1,7 +1,7 @@
 import datetime
 import multiprocessing
 import sys
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, Response
 import os
 import uvicorn
 from pydantic import BaseModel
@@ -13,6 +13,7 @@ import threading
 import time
 from fastapi.middleware.cors import CORSMiddleware
 from cron_consumer import refresh_data
+from item_to_mp3 import item_to_mp3
 from utils import generate_auth_token, generate_content_uid, link_to_md
 from models import Item, ReadingItemData, Source, User, engine
 from sqlalchemy import desc, orm, select
@@ -90,10 +91,14 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
     uid = generate_content_uid(
             [body.title or "", body.content, body.type, auth_data[0], body.link]
     )
+    uiuid = generate_content_uid(
+            [body.title or "", body.content, body.type, body.link]
+    )
     with orm.Session(engine) as session:
         session.add(
             Item(
                 uid=uid,
+                uiuid=uiuid,
                 title=body.title,
                 content=body.content,
                 link=body.link,
@@ -293,6 +298,16 @@ async def get_feed(user_email: str):
         
     return resp
 
+@app.get("/get_mp3/{uid}")
+async def get_mp3(uid: str):
+    with orm.Session(engine) as session:
+        session.execute(select(Item).where(Item.uid==uid))
+    mp3 = item_to_mp3(item.content, item.uiuid)
+    headers = {
+        "content-type": "audio/mpeg",
+        "content-disposition": "attachment; filename=data.mp3",
+    }
+    return Response(content=mp3, headers=headers)
 
 @app.get("/ping")
 async def ping():

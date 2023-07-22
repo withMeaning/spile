@@ -33,6 +33,13 @@ def consume_source(source: str, source_type: str, email: str):
                         reading_item["link"],
                     ]
                 )
+                uiuid = generate_content_uid(
+                    [
+                        reading_item["content"],
+                        reading_item["type"],
+                        reading_item["link"],
+                    ]
+                )
                 with orm.Session(engine) as session:
                     session.add(
                         Item(
@@ -43,6 +50,7 @@ def consume_source(source: str, source_type: str, email: str):
                             content=reading_item["content"],
                             type=reading_item["type"],
                             uid=uid,
+                            uiuid=uiuid,
                             user_email=email,
                         )
                     )
@@ -69,6 +77,13 @@ def consume_source(source: str, source_type: str, email: str):
                     reading_item.link,
                 ]
             )
+            uiuid = generate_content_uid(
+                [
+                    reading_item.content.description.content,
+                    "read",
+                    reading_item.link,
+                ]
+            )
             link = reading_item.content.link.content
             if not check_dup_and_stack(email, link):
                 md = link_to_md(link)
@@ -88,6 +103,7 @@ def consume_source(source: str, source_type: str, email: str):
                             content=md,  # @TODO USE THE API!
                             type="read",
                             uid=uid,
+                            uiuid=uiuid,
                             user_email=email,
                         )
                     )

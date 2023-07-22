@@ -39,6 +39,7 @@ class Item(Base):
     __tablename__ = "items"
 
     uid: orm.Mapped[str] = orm.mapped_column(Text, primary_key=True)
+    uiuid: orm.Mapped[str] = orm.mapped_column(Tex)
     title: orm.Mapped[str] = orm.mapped_column(Text, nullable=True)
     author: orm.Mapped[str] = orm.mapped_column(Text, nullable=True)
     content: orm.Mapped[str] = orm.mapped_column(Text, nullable=True)

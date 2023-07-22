@@ -9,7 +9,7 @@ import time
 def check_dup_and_stack(email: str, link: str) -> bool:
     with orm.Session(engine) as session:
         res = (
-            session.execute(select(Item).where(Item.user_email == email, link == link))
+            session.execute(select(Item).where(Item.user_email == email, Item.link == link))
             .scalars()
             .first()
         )
@@ -47,22 +47,18 @@ def consume_source(source: str, source_type: str, email: str):
                         )
                     )
 
-                    if reading_item["type"] == "do":
-                        do_state = False
-                    else:
-                        do_state = None
                     session.add(
                         ReadingItemData(
                             item_uid=uid,
                             item_order=None,
                             archived=False,
-                            done=do_state,
+                            done=False,
                             user_email=email,
                         )
                     )
                     session.commit()
     elif source_type == "rss":
-        rss_text = requests.get(source).json()
+        rss_text = requests.get(source).text
         rss = Parser.parse(rss_text)
         for reading_item in rss.channel.items:
             uid = generate_content_uid(
@@ -100,7 +96,7 @@ def consume_source(source: str, source_type: str, email: str):
                             item_uid=uid,
                             item_order=None,
                             archived=False,
-                            done=None,
+                            done=False,
                             email=email,
                         )
                     )
@@ -109,10 +105,10 @@ def consume_source(source: str, source_type: str, email: str):
         raise ValueError(f"Unknown source type: `{source_type}` for source `{source}`!")
 
 
-async def refresh_data():
+def refresh_data():
     while True:
         with orm.Session(engine) as session:
             sources = session.execute(select(Source)).scalars().all()
             for source in sources:
                 consume_source(source.source, source.type, source.user_email)
-        time.sleep(2)
+        time.sleep(1)

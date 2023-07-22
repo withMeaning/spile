@@ -87,9 +87,9 @@ class AddItemBody(BaseModel):
 async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
     if not body.content:
         body.content = await link_to_md(body.link)
-        uid = generate_content_uid(
-            (body.title or ""), body.content, body.type, auth_data[0], body.link
-        )
+    uid = generate_content_uid(
+            [body.title or "", body.content, body.type, auth_data[0], body.link]
+    )
     with orm.Session(engine) as session:
         session.add(
             Item(
@@ -97,7 +97,7 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                 title=body.title,
                 content=body.content,
                 link=body.link,
-                email=auth_data[0],
+                user_email=auth_data[0],
                 type=body.type,
                 author=body.author,
             )
@@ -105,7 +105,7 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
         if body.type == "read":
             session.add(
                 ReadingItemData(
-                    item_uid=uid, item_order=None, archived=False, email=auth_data[0]
+                    item_uid=uid, item_order=None, archived=False, user_email=auth_data[0], done=False
                 )
             )
         if body.type == "do":
@@ -115,7 +115,7 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                     item_order=None,
                     archived=False,
                     done=False,
-                    email=auth_data[0],
+                    user_email=auth_data[0],
                 )
             )
         session.commit()
@@ -231,10 +231,12 @@ async def add_source(
     data: AddSourceBody, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
     source_type = detect_source_type(data.source)
+    source_uid = generate_content_uid([data.source, source_type, auth_data[0]])
     with orm.Session(engine) as session:
         session.add(
-            Source(source=data.source, type=source_type, user_email=auth_data[0])
+            Source(uid=source_uid, source=data.source, type=source_type, user_email=auth_data[0])
         )
+        session.commit()
     return {"status": "ok"}
 
 
@@ -278,7 +280,7 @@ async def get_feed(user_email: str):
     with orm.Session(engine) as session:
         resonance_items = session.execute(
             select(Item).where(Item.user_email == user_email, Item.type == "resonance")
-        )
+        ).scalars().all()
         send_item_uids = []
         for resonance_item in resonance_items:
             if int(resonance_item.content) > 80:
@@ -286,8 +288,10 @@ async def get_feed(user_email: str):
 
         reading_items = session.execute(
             select(Item).where(Item.uid.in_(send_item_uids))
-        )
-    return [{"read": x, "reasons": [{}]} for x in reading_items]
+        ).scalars().all()
+        resp = [{"read": x.to_dict(), "reasons": [{}]} for x in reading_items]
+        
+    return resp
 
 
 @app.get("/ping")

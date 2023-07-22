@@ -39,11 +39,10 @@ class Item(Base):
     __tablename__ = "items"
 
     uid: orm.Mapped[str] = orm.mapped_column(Text, primary_key=True)
-    identifier: orm.Mapped[str] = orm.mapped_column(Text)
-    title: orm.Mapped[str] = orm.mapped_column(Text)
-    author: orm.Mapped[str] = orm.mapped_column(Text)
-    content: orm.Mapped[str] = orm.mapped_column(Text)
-    summary: orm.Mapped[str] = orm.mapped_column(Text)
+    title: orm.Mapped[str] = orm.mapped_column(Text, nullable=True)
+    author: orm.Mapped[str] = orm.mapped_column(Text, nullable=True)
+    content: orm.Mapped[str] = orm.mapped_column(Text, nullable=True)
+    summary: orm.Mapped[str] = orm.mapped_column(Text, nullable=True)
     link: orm.Mapped[str] = orm.mapped_column(Text)
     type: orm.Mapped[str] = orm.mapped_column(Text)
 
@@ -74,7 +73,7 @@ class ReadingItemData(Base):
     __tablename__ = "reading_item_data"
 
     item_uid: orm.Mapped[str] = orm.mapped_column(Text)
-    item_order: orm.Mapped[int] = orm.mapped_column(Integer)
+    item_order: orm.Mapped[int] = orm.mapped_column(Integer, nullable=True)
     archived: orm.Mapped[bool] = orm.mapped_column(Boolean)
     done: orm.Mapped[bool] = orm.mapped_column(Boolean)
 

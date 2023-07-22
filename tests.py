@@ -98,7 +98,7 @@ res = requests.post(
         "type": "resonance",
     },
 )
-time.sleep(2)
+time.sleep(3)
 items = requests.get(base + "/get_items", headers={"auth_token": user2_auth}).json()[
     "items"
 ]

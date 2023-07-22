@@ -3,7 +3,7 @@ Contains both spile (the recommender) and the node for communicating content to 
 To run:
 
 `pip3 install -r requirements.txt`
-`python3 main.py`
+`rm spile.db; GLOBAL_AUTH_TOKEN=zaza python3 main.py`
 
 You can test the database creation with
 `python3 tests.py`
@@ -15,7 +15,6 @@ withmeaning uses a similar data structure to nostr: there is only one, the event
     "events": [
         {
             "id": "uuid",
-            "identifier?": "unique name for editable events, link if type read",
             "title?": "Title",
             "author": "name of creator (username, twitter handle, pubkey)",
             "content": "Markdown of main content, number if type resonance",

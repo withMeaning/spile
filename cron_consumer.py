@@ -88,7 +88,7 @@ def consume_source(source: str, source_type: str, email: str):
                             content=md,  # @TODO USE THE API!
                             type="read",
                             uid=uid,
-                            email=email,
+                            user_email=email,
                         )
                     )
                     session.add(
@@ -97,7 +97,7 @@ def consume_source(source: str, source_type: str, email: str):
                             item_order=None,
                             archived=False,
                             done=False,
-                            email=email,
+                            user_email=email,
                         )
                     )
                     session.commit()

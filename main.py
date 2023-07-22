@@ -89,11 +89,9 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
     if not body.content:
         body.content = await link_to_md(body.link)
     uid = generate_content_uid(
-            [body.title or "", body.content, body.type, auth_data[0], body.link]
+        [body.title or "", body.content, body.type, auth_data[0], body.link]
     )
-    uiuid = generate_content_uid(
-            [body.title or "", body.content, body.type, body.link]
-    )
+    uiuid = generate_content_uid([body.title or "", body.content, body.type, body.link])
     with orm.Session(engine) as session:
         session.add(
             Item(
@@ -110,7 +108,11 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
         if body.type == "read":
             session.add(
                 ReadingItemData(
-                    item_uid=uid, item_order=None, archived=False, user_email=auth_data[0], done=False
+                    item_uid=uid,
+                    item_order=None,
+                    archived=False,
+                    user_email=auth_data[0],
+                    done=False,
                 )
             )
         if body.type == "do":
@@ -239,7 +241,12 @@ async def add_source(
     source_uid = generate_content_uid([data.source, source_type, auth_data[0]])
     with orm.Session(engine) as session:
         session.add(
-            Source(uid=source_uid, source=data.source, type=source_type, user_email=auth_data[0])
+            Source(
+                uid=source_uid,
+                source=data.source,
+                type=source_type,
+                user_email=auth_data[0],
+            )
         )
         session.commit()
     return {"status": "ok"}
@@ -283,31 +290,47 @@ async def get_sources(auth_data: Annotated[tuple[str], Depends(auth)]):
 async def get_feed(user_email: str):
     # Rules based on which the user recommends stuff to other people @TODO (this endpoint can accept an optional email, so the user can recommend to specific individuals(?))
     with orm.Session(engine) as session:
-        resonance_items = session.execute(
-            select(Item).where(Item.user_email == user_email, Item.type == "resonance")
-        ).scalars().all()
+        resonance_items = (
+            session.execute(
+                select(Item).where(
+                    Item.user_email == user_email, Item.type == "resonance"
+                )
+            )
+            .scalars()
+            .all()
+        )
         send_item_uids = []
         for resonance_item in resonance_items:
             if int(resonance_item.content) > 80:
                 send_item_uids.append(resonance_item.link)
 
-        reading_items = session.execute(
-            select(Item).where(Item.uid.in_(send_item_uids))
-        ).scalars().all()
+        reading_items = (
+            session.execute(select(Item).where(Item.uid.in_(send_item_uids)))
+            .scalars()
+            .all()
+        )
         resp = [{"read": x.to_dict(), "reasons": [{}]} for x in reading_items]
-        
+
     return resp
+
 
 @app.get("/get_mp3/{uid}")
 async def get_mp3(uid: str, auth_data: Annotated[tuple[str], Depends(auth)]):
     with orm.Session(engine) as session:
-        item = session.execute(select(Item).where(Item.uid==uid, Item.user_email==auth_data[0])).scalar().item()
+        item = (
+            session.execute(
+                select(Item).where(Item.uid == uid, Item.user_email == auth_data[0])
+            )
+            .scalar()
+            .item()
+        )
         mp3 = item_to_mp3(item.content, item.uiuid)
     headers = {
         "content-type": "audio/mpeg",
         "content-disposition": "attachment; filename=data.mp3",
     }
     return Response(content=mp3, headers=headers)
+
 
 @app.get("/ping")
 async def ping():

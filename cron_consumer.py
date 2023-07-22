@@ -9,7 +9,9 @@ import time
 def check_dup_and_stack(email: str, link: str) -> bool:
     with orm.Session(engine) as session:
         res = (
-            session.execute(select(Item).where(Item.user_email == email, Item.link == link))
+            session.execute(
+                select(Item).where(Item.user_email == email, Item.link == link)
+            )
             .scalars()
             .first()
         )

@@ -299,10 +299,10 @@ async def get_feed(user_email: str):
     return resp
 
 @app.get("/get_mp3/{uid}")
-async def get_mp3(uid: str):
+async def get_mp3(uid: str, auth_data: Annotated[tuple[str], Depends(auth)]):
     with orm.Session(engine) as session:
-        session.execute(select(Item).where(Item.uid==uid))
-    mp3 = item_to_mp3(item.content, item.uiuid)
+        item = session.execute(select(Item).where(Item.uid==uid)).scalar().item()
+        mp3 = item_to_mp3(item.content, item.uiuid)
     headers = {
         "content-type": "audio/mpeg",
         "content-disposition": "attachment; filename=data.mp3",

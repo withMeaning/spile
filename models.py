@@ -19,7 +19,10 @@ import os
 
 
 class Base(orm.DeclarativeBase):
-    pass
+    __abstract__ = True
+
+    def to_dict(self):
+        return {field.name: getattr(self, field.name) for field in self.__table__.c}
 
 
 class User(Base):
@@ -28,7 +31,6 @@ class User(Base):
     email: orm.Mapped[str] = orm.mapped_column(Text, primary_key=True)
     auth_token: orm.Mapped[str] = orm.mapped_column(Text)
     is_admin: orm.Mapped[bool] = orm.mapped_column(Boolean)
-    email: orm.Mapped[str] = orm.mapped_column(Text)
 
     created_at = Column(DateTime, default=func.now())
 
@@ -44,7 +46,6 @@ class Item(Base):
     summary: orm.Mapped[str] = orm.mapped_column(Text)
     link: orm.Mapped[str] = orm.mapped_column(Text)
     type: orm.Mapped[str] = orm.mapped_column(Text)
-    email: orm.Mapped[str] = orm.mapped_column(Text)
 
     user_email = Column(Integer, ForeignKey("users.email"))
     user = orm.relationship("User")
@@ -59,7 +60,6 @@ class Source(Base):
 
     source: orm.Mapped[str] = orm.mapped_column(Text)
     type: orm.Mapped[str] = orm.mapped_column(Text)
-    email: orm.Mapped[str] = orm.mapped_column(Text)
     uid: orm.Mapped[str] = orm.mapped_column(Text)
 
     user_email = Column(Integer, ForeignKey("users.email"))
@@ -68,8 +68,8 @@ class Source(Base):
     created_at = Column(DateTime, default=func.now())
 
 
-class ItemReadingOrder(Base):
-    __tablename__ = "item_reading_orders"
+class ReadingItemData(Base):
+    __tablename__ = "reading_item_data"
 
     item_uid: orm.Mapped[str] = orm.mapped_column(Text)
     item_order: orm.Mapped[int] = orm.mapped_column(Integer)

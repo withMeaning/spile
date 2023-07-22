@@ -1,7 +1,6 @@
 import datetime
-import json
+import multiprocessing
 import sys
-import aiosqlite
 from fastapi import FastAPI, Depends, HTTPException, Request
 import os
 import uvicorn
@@ -10,139 +9,23 @@ from typing import List, Optional
 import aiohttp
 from typing import Annotated, Tuple
 import asyncio
-import sqlite3
-from uuid import uuid4
 import threading
 import time
-from hashlib import md5
 from fastapi.middleware.cors import CORSMiddleware
-from rss_parser import Parser
-import markdownify
-
-
-async def link_to_md(link: str):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            f"https://api.diffbot.com/v3/article?url={link}&token=6165e93d46dfa342d862a975c813a296"
-        ) as resp:
-            obj = await resp.json()
-            print(obj)
-            html = obj["objects"][0]["html"]
-    md = markdownify.markdownify(html, heading_style="ATX")
-    return md
-
-
-# Note orm will make it harder to split and modify, though make coding easier, so for now we aren't
-# + async sqlalchemy is ergh and I don't want to investigate async ORMs right now
-def create_tables():
-    with sqlite3.connect("spile.db") as con:
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                email TEXT PRIMARY KEY,
-                auth_token TEXT,
-                is_admin BOOL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS items (
-                uid TEXT,
-                identifier TEXT,
-                title TEXT,
-                author TEXT,
-                content TEXT,
-                summary TEXT,
-                link TEXT,
-                type TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                email TEXT,
-                FOREIGN KEY (email) REFERENCES users(email),
-                UNIQUE(uid, email)
-            );
-            """
-        )
-
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS sources (
-                source TEXT,
-                type TEXT,
-                email TEXT,
-                FOREIGN KEY (email) REFERENCES users(email)
-            )
-            """
-        )
-
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS item_reading_data (
-                item_uid TEXT,
-                item_order INT,
-                archived BOOLEAN,
-                done BOOLEAN,
-                email TEXT,
-                FOREIGN KEY (item_uid) REFERENCES items(uid),
-                FOREIGN KEY (email) REFERENCES users(email)
-            )
-            """
-        )
-
-        con.commit()
-
-
-async def insert(table: str, values: list[dict]):
-    async with aiosqlite.connect("spile.db") as con:
-        async with con.cursor() as cur:
-            question_marks = ",".join(["?"] * len(values[0]))
-            ordered_keys = list(values[0].keys())
-            cols = ",".join(ordered_keys)
-            fmt_values = tuple(
-                tuple(values[i][k] for k in ordered_keys) for i in range(len(values))
-            )
-            if len(fmt_values) == 1:
-                fmt_values = fmt_values[0]
-            q = f"INSERT INTO {table} ({cols}) VALUES ({question_marks})"
-            print(q, fmt_values)
-            await cur.execute(q, fmt_values)
-            await con.commit()
-
-
-async def select(q: str, one: bool = False):
-    async with aiosqlite.connect("spile.db") as con:
-        con.row_factory = aiosqlite.Row
-        async with con.cursor() as cur:
-            await cur.execute(q)
-            rows = await cur.fetchall()
-            res = [dict(x) for x in rows]
-            if one:
-                if len(rows) > 1:
-                    raise Exception(f"Expected only one row, got: {len(rows)}")
-                if len(rows) < 1:
-                    return None
-                return res[0]
-            return [x for x in res]
-
-
-async def mut_query(q: str):
-    async with aiosqlite.connect("spile.db") as con:
-        async with con.cursor() as cur:
-            await cur.execute(q)
-            await con.commit()
+from cron_consumer import refresh_data
+from utils import generate_auth_token, generate_content_uid, link_to_md
+from models import Item, ReadingItemData, Source, User, engine
+from sqlalchemy import desc, orm, select
+from utils import detect_source_type, link_to_md
 
 
 async def auth(req: Request):
     auth_token = req.headers.get("auth_token", None)
-    async with aiosqlite.connect("spile.db") as db:
+    with orm.Session(engine) as session:
         if auth_token is None:
             raise HTTPException(status_code=401, detail="No auth provided")
 
-        res = await select(
-            f"SELECT email, is_admin FROM users WHERE auth_token='{auth_token}'", True
-        )
+        res = session.execute(select(User).where(User.auth_token == auth_token)).first()
         if res is None:
             raise HTTPException(status_code=401, detail="Unauthorized")
         return res["email"], res["is_admin"]
@@ -163,139 +46,25 @@ app.add_middleware(
 )
 
 
-async def detect_source_type(source: str):
-    if "@" in source and "get_feed" in source:
-        return "spiel"
-    return "rss"
-
-
-async def consume_source(source: str, source_type: str, email: str):
-    if source_type == "spiel":
-        async with aiohttp.ClientSession() as session:
-            async with session.get(source) as resp:
-                all_items = await resp.json()
-        for item in all_items:
-            reading_item = item["read"]
-            res = await select(
-                f"SELECT COUNT(*) as c FROM items WHERE email='{email}' and link='{reading_item['link']}'",
-                True,
-            )
-            if res["c"] > 0:
-                # @TODO If item already exists merge all the `views` into one
-                pass
-            else:
-                uid = generate_content_uid(
-                    reading_item["content"]
-                    + reading_item["type"]
-                    + email
-                    + str(reading_item["link"])
-                )
-                await insert(
-                    "items",
-                    [
-                        {
-                            "author": reading_item["author"],
-                            "summary": reading_item["summary"],
-                            "title": reading_item["title"],
-                            "link": reading_item["link"],
-                            "content": reading_item["content"],
-                            "type": reading_item["type"],
-                            "uid": uid,
-                            "email": email,
-                        }
-                    ],
-                )
-                if reading_item["type"] == "do":
-                    do_state = False
-                else:
-                    do_state = None
-                await insert(
-                    "item_reading_data",
-                    [
-                        {
-                            "item_uid": uid,
-                            "item_order": None,
-                            "archived": False,
-                            "done": do_state,
-                            "email": email,
-                        }
-                    ],
-                )
-    elif source_type == "rss":
-        async with aiohttp.ClientSession() as session:
-            async with session.get(source) as resp:
-                rss_text = await resp.text()
-        rss = Parser.parse(rss_text)
-        for reading_item in rss.channel.items:
-            uid = generate_content_uid(
-                reading_item.content.description.content
-                + "read"
-                + email
-                + str(reading_item.link)
-            )
-            link = reading_item.content.link.content
-            res = await select(
-                f"SELECT COUNT(*) as c FROM items WHERE email='{email}' and link='{link}'",
-                True,
-            )
-            if res["c"] > 0:
-                # @TODO If item already exists merge all the `views` into one
-                pass
-            else:
-                md = await link_to_md(link)
-                await insert(
-                    "items",
-                    [
-                        {
-                            "author": reading_item.content.author.content
-                            if reading_item.content.author
-                            else None,
-                            "summary": reading_item.content.description.content
-                            if reading_item.content.description
-                            else "",
-                            "title": reading_item.content.title.content
-                            if reading_item.content.title
-                            else "",
-                            "link": link,
-                            "content": md,  # @TODO USE THE API!
-                            "type": "read",
-                            "uid": uid,
-                            "email": email,
-                        }
-                    ],
-                )
-                await insert(
-                    "item_reading_data",
-                    [
-                        {
-                            "item_uid": uid,
-                            "item_order": None,
-                            "archived": False,
-                            "done": None,
-                            "email": email,
-                        }
-                    ],
-                )
-    else:
-        raise ValueError(f"Unknown source type: `{source_type}` for source `{source}`!")
-
-
-def generate_auth_token():
-    return str(uuid4())
-
-
-def generate_content_uid(content: str):
-    return str(md5(content.encode("utf-8")).hexdigest())
-
-
 @app.get("/get_items")
 async def get_items(auth_data: Annotated[tuple[str], Depends(auth)]):
-    async with aiosqlite.connect("spile.db") as db:
-        q = f"SELECT * FROM items INNER JOIN item_reading_data ON items.uid=item_reading_data.item_uid AND item_reading_data.email='{auth_data[0]}'  AND item_reading_data.archived=false WHERE items.email='{auth_data[0]}' and items.type='read' or items.type='do' ORDER BY item_reading_data.item_order"
-        print(q)
-        all_consumeable = await select(q)
+    with orm.Session(engine) as session:
+        reading_item_Data = (
+            session.execute(
+                select(ReadingItemData)
+                .where(
+                    ReadingItemData.user_email == auth_data[0],
+                    ReadingItemData.archived == False,
+                    ReadingItemData.item.any(Item.type.in_("read", "do")),
+                )
+                .order_by(desc(ReadingItemData.item_order))
+            )
+            .scalars()
+            .all()
+        )
+        items = [x.item for x in reading_item_Data]
 
-    return {"updateAt": datetime.datetime.now(), "items": all_consumeable}
+    return {"items": [x.to_dict() for x in items]}
 
 
 class AddItemBody(BaseModel):
@@ -311,51 +80,37 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
     if not body.content:
         body.content = await link_to_md(body.link)
         uid = generate_content_uid(
-            (body.title or "")
-            + body.content
-            + body.type
-            + auth_data[0]
-            + str(body.link)
+            (body.title or ""), body.content, body.type, auth_data[0], body.link
         )
-    await insert(
-        "items",
-        [
-            {
-                "uid": uid,
-                "title": body.title,
-                "content": body.content,
-                "link": body.link,
-                "email": auth_data[0],
-                "type": body.type,
-                "author": body.author,
-            }
-        ],
-    )
-    if body.type == "read":
-        await insert(
-            "item_reading_data",
-            [
-                {
-                    "item_uid": uid,
-                    "item_order": None,
-                    "archived": False,
-                    "email": auth_data[0],
-                }
-            ],
+    with orm.Session(engine) as session:
+        session.add(
+            Item(
+                uid=uid,
+                title=body.title,
+                content=body.content,
+                link=body.link,
+                email=auth_data[0],
+                type=body.type,
+                author=body.author,
+            )
         )
-    if body.type == "do":
-        await insert(
-            "item_reading_data",
-            [
-                {
-                    "item_uid": uid,
-                    "item_order": None,
-                    "archived": False,
-                    "done": False,
-                    "email": auth_data[0],
-                }
-            ],
-        )
+        if body.type == "read":
+            session.add(
+                ReadingItemData(
+                    item_uid=uid, item_order=None, archived=False, email=auth_data[0]
+                )
+            )
+        if body.type == "do":
+            session.add(
+                ReadingItemData(
+                    item_uid=uid,
+                    item_order=None,
+                    archived=False,
+                    done=False,
+                    email=auth_data[0],
+                )
+            )
+        session.commit()
     return body
 
 
@@ -370,19 +125,15 @@ async def create_user(
 ):
     if auth_data[1]:
         new_user_auth_token = generate_auth_token()
-        await insert(
-            "users",
-            [
-                {
-                    "email": body.email,
-                    "auth_token": new_user_auth_token,
-                    "is_admin": str(body.is_admin).lower(),
-                }
-            ],
-        )
-        # json = AddItemBody(title="Welcome", content="This is the start of ...", type="read", link="")
-        # print(json, [body.email, new_user_auth_token])
-        # await add_item(json, [body.email, new_user_auth_token])
+        with orm.Session(engine) as session:
+            session.add(
+                User(
+                    email=body.email,
+                    auth_token=new_user_auth_token,
+                    is_admin=body.is_admin,
+                )
+            )
+            session.commit()
         return {"email": body.email, "auth_token": new_user_auth_token}
 
 
@@ -395,13 +146,16 @@ class ArchiveItemBody(BaseModel):
 async def archive(
     body: ArchiveItemBody, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
-    """print(
-        f"UPDATE item_reading_data SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
-    )"""
-    await mut_query(
-        f"UPDATE item_reading_data SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
-    )
-    return ""
+    with orm.Session(engine) as session:
+        reading_item_data = session.execute(
+            select(ReadingItemData).where(
+                ReadingItemData.item_uid == body.uid,
+                ReadingItemData.user_email == auth_data[0],
+            )
+        ).first()
+        reading_item_data.archived = body.archived
+        session.commit()
+    return {}
 
 
 class DoneItemBody(BaseModel):
@@ -410,14 +164,17 @@ class DoneItemBody(BaseModel):
 
 
 @app.post("/done")
-async def archive(body: DoneItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
-    """print(
-        f"UPDATE item_reading_data SET archived={str(body.archived).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
-    )"""
-    await mut_query(
-        f"UPDATE item_reading_data SET done={str(body.done).lower()} WHERE item_uid='{body.uid}' AND email='{auth_data[0]}'"
-    )
-    return ""
+async def done(body: DoneItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
+    with orm.Session(engine) as session:
+        reading_item_data = session.execute(
+            select(ReadingItemData).where(
+                ReadingItemData.item_uid == body.uid,
+                ReadingItemData.user_email == auth_data[0],
+            )
+        ).first()
+        reading_item_data.done = body.done
+        session.commit()
+    return {}
 
 
 class OrderItemBody(BaseModel):
@@ -433,11 +190,16 @@ class Order(BaseModel):
 async def order(body: Order, auth_data: Annotated[tuple[str], Depends(auth)]):
     print(body)
     for item in body.items:
-        print(item)
-        await mut_query(
-            f"UPDATE item_reading_data SET item_order={item.order} WHERE item_uid='{item.uid}' AND email='{auth_data[0]}'"
-        )
-    return ""
+        with orm.Session(engine) as session:
+            reading_item_data = session.execute(
+                select(ReadingItemData).where(
+                    ReadingItemData.item_uid == item.uid,
+                    ReadingItemData.user_email == auth_data[0],
+                )
+            ).first()
+            reading_item_data.item_order = item.order
+            session.commit()
+        return {}
 
 
 class AddSourceBody(BaseModel):
@@ -448,42 +210,60 @@ class AddSourceBody(BaseModel):
 async def add_source(
     data: AddSourceBody, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
-    source_type = await detect_source_type(data.source)
-    await insert(
-        "sources", [{"source": data.source, "type": source_type, "email": auth_data[0]}]
-    )
+    source_type = detect_source_type(data.source)
+    with orm.Session(engine) as session:
+        session.add(
+            Source(source=data.source, type=source_type, user_email=auth_data[0])
+        )
     return {"status": "ok"}
+
+
+class DeleteSourceBody(BaseModel):
+    source: str
+
+
+@app.post("/delete_source")
+async def delete_source(
+    data: DeleteSourceBody, auth_data: Annotated[tuple[str], Depends(auth)]
+):
+    with orm.Session(engine) as session:
+        source = session.execute(
+            select(Source).where(
+                Source.source == data.source, Source.user_email == auth_data[0]
+            )
+        ).first()
+        source.delete()
+        session.commit()
+    return {"status": "ok"}
+
+
+@app.get("/get_sources")
+async def get_sources(auth_data: Annotated[tuple[str], Depends(auth)]):
+    with orm.Session(engine) as session:
+        sources = (
+            session.execute(select(Source).where(Source.user_email == auth_data[0]))
+            .scalars()
+            .all()
+        )
+    return {"sources": [x.to_dict() for x in sources]}
 
 
 @app.get("/get_feed/{user_email}")
 async def get_feed(user_email: str):
     # Rules based on which the user recommends stuff to other people @TODO (this endpoint can accept an optional email, so the user can recommend to specific individuals(?))
-    resonance_items = await select(
-        f"SELECT content, link FROM items WHERE email='{user_email}' AND type='resonance'"
-    )
-    send_item_uids = []
-    for resonance_item in resonance_items:
-        if int(resonance_item["content"]) > 80:
-            send_item_uids.append(resonance_item["link"])
-
-    send_item_uids = ",".join([f"'{x}'" for x in send_item_uids])
-    reading_items = await select(f"SELECT * FROM items WHERE uid in ({send_item_uids})")
-    consumable_objs = []
-    for reading_item in reading_items:
-        consumable_objs.append(
-            {"read": reading_item, "reasons": [{}]}  # e.g. the resonance item
+    with orm.Session(engine) as session:
+        resonance_items = session.execute(
+            select(Item).where(Item.user_email == user_email, Item.type == "resonance")
         )
-    return consumable_objs
+        send_item_uids = []
+        for resonance_item in resonance_items:
+            if int(resonance_item.content) > 80:
+                send_item_uids.append(resonance_item.link)
 
-
-@app.get("/get_feed/{user_email}.rss")
-async def get_feed_rss(user_email: str):
-    async with aiosqlite.connect("spile.db") as db:
-        q = f"SELECT * FROM items INNER JOIN item_reading_data ON items.uid=item_reading_data.item_uid AND item_reading_data.email='{user_email}'  AND item_reading_data.archived=false WHERE items.email='{user_email}' and items.type='read' or items.type='do' ORDER BY item_reading_data.item_order"
-        print(q)
-        all_consumeable = await select(q)
-
-    return {"updateAt": datetime.datetime.now(), "items": all_consumeable}
+        reading_items = session.execute(
+            select(Item).where(Item.uid.in_(send_item_uids))
+        )
+    return [{"read": x, "reasons": [{}]} for x in reading_items]
 
 
 @app.get("/ping")
@@ -496,32 +276,21 @@ async def startup():
     pass
 
 
-async def refresh_data():
-    while True:
-        sources = await select("SELECT * FROM sources")
-        for source in sources:
-            await consume_source(source["source"], source["type"], source["email"])
-        time.sleep(2)
-
-
-class BackgroundTasks(threading.Thread):
-    def run(self, *args, **kwargs):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        loop.run_until_complete(refresh_data())
-        loop.close()
-
-
 if __name__ == "__main__":
-    create_tables()
-    t = BackgroundTasks()
-    t.start()
+    p = multiprocessing.Process(target=refresh_data)
+    p.start()
     if len(sys.argv) > 1:
         port = int(sys.argv[1])
     else:
         port = 8080
-    if os.environ.get("SPILE_ENV", "devitem_uidelopment") == "production":
-        uvicorn.run("main:app", port=port, host="0.0.0.0", workers=4)
-    else:
-        uvicorn.run("main:app", port=port, host="0.0.0.0", reload=True)
+    try:
+        if os.environ.get("SPILE_ENV", "development") == "production":
+            uvicorn.run("main:app", port=port, host="0.0.0.0", workers=4)
+        else:
+            uvicorn.run("main:app", port=port, host="0.0.0.0", reload=True)
+    except KeyboardInterrupt:
+        print("Stopping server...")
+    finally:
+        # Ensure the background process is terminated when the server is stopped
+        p.terminate()
+        p.join()

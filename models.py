@@ -88,7 +88,7 @@ class ReadingItemData(Base):
 
 
 db_url = os.environ.get(
-    "WM_DB_URL", "sqlite:///" + str(os.path.join(os.getcwd(), "spiel.db"))
+    "WM_DB_URL", "sqlite:///" + str(os.path.join(os.getcwd(), "spile.db"))
 )
 print(f"Running on db url: {db_url}")
 engine = create_engine(db_url, echo=False)

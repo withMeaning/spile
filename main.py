@@ -17,6 +17,7 @@ from utils import generate_auth_token, generate_content_uid, link_to_md
 from models import Item, ReadingItemData, Source, User, engine
 from sqlalchemy import desc, orm, select
 from utils import detect_source_type, link_to_md
+import os
 
 
 async def auth(req: Request):
@@ -24,11 +25,18 @@ async def auth(req: Request):
     with orm.Session(engine) as session:
         if auth_token is None:
             raise HTTPException(status_code=401, detail="No auth provided")
+        if os.environ.get("GLOBAL_AUTH_TOKEN") == auth_token:
+            return None, True
 
-        res = session.execute(select(User).where(User.auth_token == auth_token)).first()
-        if res is None:
+        user = (
+            session.execute(select(User).where(User.auth_token == auth_token))
+            .scalars()
+            .first()
+        )
+        if user is None:
             raise HTTPException(status_code=401, detail="Unauthorized")
-        return res["email"], res["is_admin"]
+
+        return user.email, user.is_admin
 
 
 app = FastAPI()
@@ -123,9 +131,9 @@ class CreateUserBody(BaseModel):
 async def create_user(
     body: CreateUserBody, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
-    if auth_data[1]:
+    with orm.Session(engine) as session:
         new_user_auth_token = generate_auth_token()
-        with orm.Session(engine) as session:
+        if auth_data[1]:
             session.add(
                 User(
                     email=body.email,
@@ -134,7 +142,7 @@ async def create_user(
                 )
             )
             session.commit()
-        return {"email": body.email, "auth_token": new_user_auth_token}
+            return {"email": body.email, "auth_token": new_user_auth_token}
 
 
 class ArchiveItemBody(BaseModel):
@@ -147,12 +155,16 @@ async def archive(
     body: ArchiveItemBody, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
     with orm.Session(engine) as session:
-        reading_item_data = session.execute(
-            select(ReadingItemData).where(
-                ReadingItemData.item_uid == body.uid,
-                ReadingItemData.user_email == auth_data[0],
+        reading_item_data = (
+            session.execute(
+                select(ReadingItemData).where(
+                    ReadingItemData.item_uid == body.uid,
+                    ReadingItemData.user_email == auth_data[0],
+                )
             )
-        ).first()
+            .scalars()
+            .first()
+        )
         reading_item_data.archived = body.archived
         session.commit()
     return {}
@@ -166,12 +178,16 @@ class DoneItemBody(BaseModel):
 @app.post("/done")
 async def done(body: DoneItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
     with orm.Session(engine) as session:
-        reading_item_data = session.execute(
-            select(ReadingItemData).where(
-                ReadingItemData.item_uid == body.uid,
-                ReadingItemData.user_email == auth_data[0],
+        reading_item_data = (
+            session.execute(
+                select(ReadingItemData).where(
+                    ReadingItemData.item_uid == body.uid,
+                    ReadingItemData.user_email == auth_data[0],
+                )
             )
-        ).first()
+            .scalars()
+            .first()
+        )
         reading_item_data.done = body.done
         session.commit()
     return {}
@@ -191,12 +207,16 @@ async def order(body: Order, auth_data: Annotated[tuple[str], Depends(auth)]):
     print(body)
     for item in body.items:
         with orm.Session(engine) as session:
-            reading_item_data = session.execute(
-                select(ReadingItemData).where(
-                    ReadingItemData.item_uid == item.uid,
-                    ReadingItemData.user_email == auth_data[0],
+            reading_item_data = (
+                session.execute(
+                    select(ReadingItemData).where(
+                        ReadingItemData.item_uid == item.uid,
+                        ReadingItemData.user_email == auth_data[0],
+                    )
                 )
-            ).first()
+                .scalars()
+                .first()
+            )
             reading_item_data.item_order = item.order
             session.commit()
         return {}
@@ -227,11 +247,15 @@ async def delete_source(
     data: DeleteSourceBody, auth_data: Annotated[tuple[str], Depends(auth)]
 ):
     with orm.Session(engine) as session:
-        source = session.execute(
-            select(Source).where(
-                Source.source == data.source, Source.user_email == auth_data[0]
+        source = (
+            session.execute(
+                select(Source).where(
+                    Source.source == data.source, Source.user_email == auth_data[0]
+                )
             )
-        ).first()
+            .scalars()
+            .first()
+        )
         source.delete()
         session.commit()
     return {"status": "ok"}

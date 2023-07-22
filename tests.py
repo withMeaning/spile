@@ -10,24 +10,23 @@ base = "http://localhost:8080"
 
 
 # We make the admin account
-db = sqlite3.connect("spile.db")
-
-db.execute(
-    "INSERT INTO users (email, auth_token, is_admin) VALUES ('test@test.com', 'abcdefg', true)"
-)
-db.commit()
+admin_auth_token = requests.post(
+    base + "/create_user",
+    headers={"auth_token": "zaza"},
+    json={"email": "admin@test.com", "is_admin": True},
+).json()["auth_token"]
 
 ## And create two users
 user1_email = "user1@test.com"
 user2_email = "user2@test.com"
 user1_auth = requests.post(
     base + "/create_user",
-    headers={"auth_token": "abcdefg"},
+    headers={"auth_token": admin_auth_token},
     json={"email": user1_email, "is_admin": False},
 ).json()["auth_token"]
 user2_auth = requests.post(
     base + "/create_user",
-    headers={"auth_token": "abcdefg"},
+    headers={"auth_token": admin_auth_token},
     json={"email": user2_email, "is_admin": True},
 ).json()["auth_token"]
 

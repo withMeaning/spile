@@ -8,9 +8,11 @@ import time
 
 def check_dup_and_stack(email: str, link: str) -> bool:
     with orm.Session(engine) as session:
-        res = session.execute(
-            select(Item).where(Item.user_email == email, link == link)
-        ).first()
+        res = (
+            session.execute(select(Item).where(Item.user_email == email, link == link))
+            .scalars()
+            .first()
+        )
     if res:
         # @TODO If item already exists merge all the `views` into one
         return True
@@ -18,7 +20,7 @@ def check_dup_and_stack(email: str, link: str) -> bool:
 
 
 def consume_source(source: str, source_type: str, email: str):
-    if source_type == "spiel":
+    if source_type == "spile":
         all_items = requests.get(source).json()
         for item in all_items:
             reading_item = item["read"]

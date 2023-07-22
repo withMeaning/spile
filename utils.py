@@ -31,7 +31,7 @@ def link_to_md(link: str):
 
 def detect_source_type(source: str):
     if "@" in source and "get_feed" in source:
-        return "spiel"
+        return "spile"
     return "rss"
 
 

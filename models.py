@@ -52,7 +52,7 @@ class Item(Base):
 
     created_at = Column(DateTime, default=func.now())
 
-    __table_args__ = (UniqueConstraint("link", "email", name="uix_uid_email"),)
+    __table_args__ = (UniqueConstraint("link", "user_email"),)
 
 
 class Source(Base):
@@ -60,12 +60,14 @@ class Source(Base):
 
     source: orm.Mapped[str] = orm.mapped_column(Text)
     type: orm.Mapped[str] = orm.mapped_column(Text)
-    uid: orm.Mapped[str] = orm.mapped_column(Text)
+    uid: orm.Mapped[str] = orm.mapped_column(Text, primary_key=True)
 
     user_email = Column(Integer, ForeignKey("users.email"))
     user = orm.relationship("User")
 
     created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (UniqueConstraint("source", "user_email"),)
 
 
 class ReadingItemData(Base):
@@ -81,6 +83,8 @@ class ReadingItemData(Base):
 
     item_uid = Column(Integer, ForeignKey("items.uid"))
     item = orm.relationship("Item")
+
+    __table_args__ = (PrimaryKeyConstraint("item_uid", "user_email"),)
 
 
 db_url = os.environ.get(

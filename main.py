@@ -332,6 +332,11 @@ async def get_mp3(uid: str, auth_data: Annotated[tuple[str], Depends(auth)]):
     return Response(content=mp3, headers=headers)
 
 
+@app.get("/auth_session")
+async def auth_session(auth_data: Annotated[tuple[str], Depends(auth)]):
+    return True
+
+
 @app.get("/ping")
 async def ping():
     return "Pong"

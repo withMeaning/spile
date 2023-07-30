@@ -29,7 +29,7 @@ user2_auth = requests.post(
     headers={"auth_token": admin_auth_token},
     json={"email": user2_email, "is_admin": True},
 ).json()["auth_token"]
-
+print(user1_auth, user2_auth)
 # Both users should have no items
 for auth_token in [user1_auth, user2_auth]:
     items = requests.get(

@@ -1,8 +1,9 @@
+google-cloud-texttospeech
 fastapi
 uvicorn
 aiosqlite
 aiohttp
 markdownify
 rss_parser
+pydub
 sqlalchemy
-google-cloud-texttospeech

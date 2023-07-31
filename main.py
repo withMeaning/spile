@@ -14,11 +14,12 @@ import time
 from fastapi.middleware.cors import CORSMiddleware
 from cron_consumer import refresh_data
 from item_to_mp3 import item_to_mp3
-from utils import generate_auth_token, generate_content_uid, link_to_md
+from utils import generate_auth_token, generate_content_uid, link_to_md, get_all_from_link
 from models import Item, ReadingItemData, Source, User, engine
 from sqlalchemy import desc, orm, select
 from utils import detect_source_type, link_to_md
 import os
+import markdownify
 
 
 async def auth(req: Request):
@@ -86,8 +87,14 @@ class AddItemBody(BaseModel):
 
 @app.post("/add_item")
 async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(auth)]):
-    if not body.content:
-        body.content = await link_to_md(body.link)
+    if not body.content and not body.title:
+        response = get_all_from_link(body.link)
+        body.title = response["title"]
+        body.author = response["siteName"]
+        html = response["html"]
+        md = markdownify.markdownify(html, heading_style="ATX")
+        body.content = md
+
     uid = generate_content_uid(
         [body.title or "", body.content, body.type, auth_data[0], body.link]
     )
@@ -126,7 +133,7 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                 )
             )
         session.commit()
-    return body
+    return uid
 
 
 class CreateUserBody(BaseModel):

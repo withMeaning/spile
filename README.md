@@ -3,7 +3,8 @@ Contains both spile (the recommender) and the node for communicating content to 
 To run:
 
 `pip3 install -r requirements.txt`
-`rm spile.db; GLOBAL_AUTH_TOKEN=zaza python3 main.py`
+`rm spile.db` Careful!
+`GLOBAL_AUTH_TOKEN=zaza python3 main.py`
 
 You can test the database creation with
 `python3 tests.py`

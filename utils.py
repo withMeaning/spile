@@ -29,6 +29,14 @@ def link_to_md(link: str):
     return md
 
 
+def get_all_from_link(link: str):
+    obj = requests.get(
+        f"https://api.diffbot.com/v3/article?url={link}&token=6165e93d46dfa342d862a975c813a296"
+    ).json()
+    return obj["objects"][0]
+
+
+
 def detect_source_type(source: str):
     if "@" in source and "get_feed" in source:
         return "spile"

@@ -133,7 +133,16 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                 )
             )
         session.commit()
-    return uid
+    return Item(
+                uid=uid,
+                uiuid=uiuid,
+                title=body.title,
+                content=body.content,
+                link=body.link,
+                user_email=auth_data[0],
+                type=body.type,
+                author=body.author,
+            )
 
 
 class CreateUserBody(BaseModel):

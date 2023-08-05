@@ -75,7 +75,7 @@ assert resp.status_code == 200
 
 
 time.sleep(1.5)
-# They should still have 1 item each
+    # They should still have 1 item each
 for auth_token in [user1_auth, user2_auth]:
     items = requests.get(
         base + "/get_items", headers={"auth_token": auth_token}

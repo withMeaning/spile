@@ -142,6 +142,7 @@ async def add_item(body: AddItemBody, auth_data: Annotated[tuple[str], Depends(a
                 user_email=auth_data[0],
                 type=body.type,
                 author=body.author,
+                created_at=datetime.datetime.now(),
             )
 
 
